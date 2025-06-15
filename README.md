@@ -44,3 +44,20 @@ O projeto estará disponível em [http://localhost:3000](http://localhost:3000).
 ## 📷 Imagem de Demonstração
  ![Dashboard](https://i.imgur.com/ZKqJyT2.jpeg)
 
+## 🤝 Contribuindo
+
+1. Faça um Fork do projeto
+2. Crie uma Branch para sua Feature 
+3. Faça o Commit das suas mudanças 
+4. Faça o Push para a Branch 
+5. Abra um Pull Request
+
+## 📝 Licença
+
+Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
+
+## 👨‍💻 Autor
+
+Raphael Calixto
+- GitHub: [@RaphaCalixto](https://github.com/RaphaCalixto)
+- Email: raphacalixto10@gmail.com 
