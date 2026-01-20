@@ -9,7 +9,7 @@ import { MusicPlayer } from "@/components/music-player"
 import { CalendarSection } from "@/components/calendar-section"
 import { DrawingSection } from "@/components/drawing-section"
 import { TasksSection } from "@/components/tasks-section"
-import { WelcomeScreen } from "@/components/welcome-screen"
+import { AuthScreen } from "@/components/auth-screen"
 import { WeatherWidget } from "@/components/weather-widget"
 import { CurrencyWidget } from "@/components/currency-widget"
 import { ClockWidget } from "@/components/clock-widget"
@@ -36,6 +36,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useTheme } from "next-themes"
+import { supabase } from "@/lib/supabaseClient"
 
 const wallpapers = [
   { name: "Oceano", url: "/images/ocean-bg.png" },
@@ -59,37 +60,80 @@ export default function Dashboard() {
   const [customWallpaperUrl, setCustomWallpaperUrl] = useState("")
   const [uploadedWallpapers, setUploadedWallpapers] = useState<Array<{ name: string; url: string }>>([])
   const [userName, setUserName] = useState<string | null>(null)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [isAuthReady, setIsAuthReady] = useState(false)
   const [isEditingName, setIsEditingName] = useState(false)
   const [newName, setNewName] = useState("")
   const { theme } = useTheme()
 
-  // Carregar nome do usuário do localStorage
+  // Carregar sessão do Supabase e observar mudanças
   useEffect(() => {
-    const savedName = localStorage.getItem("dashboard-user-name")
-    if (savedName) {
-      setUserName(savedName)
+    let mounted = true
+
+    const load = async () => {
+      const { data } = await supabase.auth.getUser()
+      const user = data.user
+      const name = (user?.user_metadata as any)?.name
+      if (mounted) {
+        setUserName(typeof name === "string" && name.trim() ? name : null)
+        setUserEmail(typeof user?.email === "string" ? user.email : null)
+        setIsAuthenticated(!!user)
+        setIsAuthReady(true)
+      }
+    }
+
+    load()
+
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const user = session?.user ?? null
+      const name = (user?.user_metadata as any)?.name
+      if (mounted) {
+        setUserName(typeof name === "string" && name.trim() ? name : null)
+        setUserEmail(typeof user?.email === "string" ? user.email : null)
+        setIsAuthenticated(!!user)
+        setIsAuthReady(true)
+      }
+    })
+
+    return () => {
+      mounted = false
+      sub.subscription.unsubscribe()
     }
   }, [])
 
-  // Salvar nome do usuário
-  const handleNameSubmit = (name: string) => {
-    setUserName(name)
-    localStorage.setItem("dashboard-user-name", name)
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
   }
+
+  const displayName = userName ?? (userEmail ? userEmail.split("@")[0] : "")
 
   // Editar nome do usuário
   const handleNameEdit = () => {
     if (newName.trim()) {
-      setUserName(newName.trim())
-      localStorage.setItem("dashboard-user-name", newName.trim())
-      setIsEditingName(false)
-      setNewName("")
+      const nextName = newName.trim()
+      supabase.auth
+        .updateUser({
+          data: { name: nextName },
+        })
+        .then(({ error }) => {
+          if (!error) {
+            setUserName(nextName)
+            setIsEditingName(false)
+            setNewName("")
+          }
+        })
     }
   }
 
-  // Se não tem nome, mostrar tela de boas-vindas
-  if (!userName) {
-    return <WelcomeScreen onNameSubmit={handleNameSubmit} />
+  // Se ainda não carregou auth, evitar flash
+  if (!isAuthReady) {
+    return null
+  }
+
+  // Se não tem usuário autenticado, mostrar tela de login/cadastro
+  if (!isAuthenticated) {
+    return <AuthScreen />
   }
 
   const renderContent = () => {
@@ -113,7 +157,7 @@ export default function Dashboard() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-blue-800 dark:text-blue-300">
                   <Brain className="h-5 w-5" />
-                  Bem-vindo de volta, {userName}! 👋
+                  Bem-vindo de volta, {displayName}! 👋
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -353,14 +397,22 @@ export default function Dashboard() {
             {/* Nome do usuário */}
             <div className="flex items-center gap-2 bg-white/20 backdrop-blur-md rounded-lg px-3 py-2 border border-white/20">
               <User className="h-4 w-4 text-white" />
-              <span className="text-white font-medium">Bem-vindo, {userName}</span>
+              <span className="text-white font-medium">Bem-vindo, {displayName}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-white hover:bg-white/20"
+                onClick={handleSignOut}
+              >
+                Sair
+              </Button>
               <Dialog open={isEditingName} onOpenChange={setIsEditingName}>
                 <DialogTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-6 w-6 text-white hover:bg-white/20"
-                    onClick={() => setNewName(userName)}
+                    onClick={() => setNewName(displayName)}
                   >
                     <Edit className="h-3 w-3" />
                   </Button>
