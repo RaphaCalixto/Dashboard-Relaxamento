@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Brain, Sparkles } from "lucide-react"
 import { supabase } from "@/lib/supabaseClient"
+import { useToast } from "@/hooks/use-toast"
 
 type AuthScreenProps = {
   onSignedIn?: () => void
@@ -21,6 +22,7 @@ export function AuthScreen({ onSignedIn }: AuthScreenProps) {
   const [name, setName] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { toast } = useToast()
 
   const canSubmit = useMemo(() => {
     if (!email.trim() || !password) return false
@@ -41,7 +43,7 @@ export function AuthScreen({ onSignedIn }: AuthScreenProps) {
 
     try {
       if (mode === "signUp") {
-        const { error: signUpError } = await supabase.auth.signUp({
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email: email.trim(),
           password,
           options: {
@@ -53,6 +55,21 @@ export function AuthScreen({ onSignedIn }: AuthScreenProps) {
 
         if (signUpError) throw signUpError
 
+        toast({
+          title: "Conta criada com sucesso",
+          description: "Você já pode usar o dashboard.",
+        })
+
+        // Se a confirmação de e-mail estiver desativada, normalmente já vem session aqui.
+        // Se não vier (ex.: configuração mudou), tentamos logar automaticamente.
+        if (!signUpData.session) {
+          const { error: autoSignInError } = await supabase.auth.signInWithPassword({
+            email: email.trim(),
+            password,
+          })
+          if (autoSignInError) throw autoSignInError
+        }
+
         onSignedIn?.()
         return
       }
@@ -63,6 +80,11 @@ export function AuthScreen({ onSignedIn }: AuthScreenProps) {
       })
 
       if (signInError) throw signInError
+
+      toast({
+        title: "Login realizado",
+        description: "Bem-vindo!",
+      })
 
       onSignedIn?.()
     } catch (err: any) {
