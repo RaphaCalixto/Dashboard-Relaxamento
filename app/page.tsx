@@ -488,19 +488,19 @@ export default function Dashboard() {
                             "relative aspect-video rounded-lg overflow-hidden cursor-pointer border-2 transition-all hover:opacity-90 active:opacity-75 group",
                             wallpaper === wp.url ? "border-blue-500" : "border-transparent",
                           )}
+                          onClick={() => handleWallpaperChange(wp.url)}
                         >
                           <img
                             src={wp.url || "/placeholder.svg"}
                             alt={wp.name}
                             className="w-full h-full object-cover"
-                            onClick={() => handleWallpaperChange(wp.url)}
                           />
-                          <div className="absolute inset-0 bg-black/20 flex items-end p-2">
+                          <div className="absolute inset-0 bg-black/20 flex items-end p-2 pointer-events-none">
                             <span className="text-white text-sm font-medium flex-1">{wp.name}</span>
                             <Button
                               variant="destructive"
                               size="icon"
-                              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 removeUploadedMedia(wp.id, wp.storagePath, "image")
