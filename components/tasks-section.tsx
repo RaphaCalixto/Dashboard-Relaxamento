@@ -14,9 +14,6 @@ import {
   Plus,
   Edit,
   Trash2,
-  Save,
-  Download,
-  Upload,
   CheckSquare,
   Clock,
   PlayCircle,
@@ -26,6 +23,7 @@ import {
   GripVertical,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { supabase } from "@/lib/supabaseClient"
 
 type TaskStatus = "todo" | "inprogress" | "completed"
 
@@ -38,6 +36,10 @@ type Task = {
   updatedAt: string
   priority: "low" | "medium" | "high"
   images: string[]
+}
+
+type TasksSectionProps = {
+  userId: string
 }
 
 const statusConfig = {
@@ -70,7 +72,7 @@ const priorityColors = {
   high: "bg-red-500",
 }
 
-export function TasksSection() {
+export function TasksSection({ userId }: TasksSectionProps) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
@@ -78,193 +80,139 @@ export function TasksSection() {
   const [taskDescription, setTaskDescription] = useState("")
   const [taskPriority, setTaskPriority] = useState<"low" | "medium" | "high">("medium")
   const [taskImages, setTaskImages] = useState<string[]>([])
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [draggedTask, setDraggedTask] = useState<Task | null>(null)
   const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
-  // Carregar tarefas do localStorage
   useEffect(() => {
-    const savedTasks = localStorage.getItem("dashboard-tasks")
-    if (savedTasks) {
-      try {
-        const parsedTasks = JSON.parse(savedTasks)
-        setTasks(parsedTasks)
-      } catch (error) {
-        console.error("Erro ao carregar tarefas:", error)
-        initializeExampleTasks()
+    let cancelled = false
+
+    const load = async () => {
+      const { data, error } = await supabase
+        .from("user_tasks")
+        .select("id, title, description, status, priority, images, created_at, updated_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+
+      if (cancelled) return
+
+      if (error) {
+        toast({
+          title: "Erro ao carregar",
+          description: "Não foi possível carregar suas tarefas.",
+          variant: "destructive",
+        })
+        return
       }
-    } else {
-      initializeExampleTasks()
-    }
-  }, [])
 
-  const initializeExampleTasks = () => {
-    const exampleTasks: Task[] = [
-      {
-        id: "1",
-        title: "Estudar React",
-        description: "Revisar conceitos de hooks e context API",
-        status: "todo",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        priority: "high",
-        images: [],
-      },
-      {
-        id: "2",
-        title: "Exercitar-se",
-        description: "30 minutos de caminhada no parque",
-        status: "inprogress",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        priority: "medium",
-        images: [],
-      },
-      {
-        id: "3",
-        title: "Ler livro",
-        description: "Terminar capítulo 5 do livro de JavaScript",
-        status: "completed",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        priority: "low",
-        images: [],
-      },
-    ]
-    setTasks(exampleTasks)
-    setHasUnsavedChanges(true)
-  }
-
-  // Salvar tarefas manualmente
-  const saveTasks = () => {
-    try {
-      localStorage.setItem("dashboard-tasks", JSON.stringify(tasks))
-      setHasUnsavedChanges(false)
-      toast({
-        title: "Tarefas salvas!",
-        description: "Suas tarefas foram salvas com sucesso.",
-      })
-    } catch (error) {
-      console.error("Erro ao salvar tarefas:", error)
-      toast({
-        title: "Erro ao salvar",
-        description: "Não foi possível salvar as tarefas. Tente novamente.",
-        variant: "destructive",
-      })
-    }
-  }
-
-  // Exportar tarefas como arquivo JSON
-  const exportTasks = () => {
-    try {
-      const dataStr = JSON.stringify(tasks, null, 2)
-      const dataBlob = new Blob([dataStr], { type: "application/json" })
-      const url = URL.createObjectURL(dataBlob)
-      const link = document.createElement("a")
-      link.href = url
-      link.download = `tarefas-${new Date().toISOString().split("T")[0]}.json`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
-
-      toast({
-        title: "Tarefas exportadas!",
-        description: "Arquivo baixado com sucesso.",
-      })
-    } catch (error) {
-      console.error("Erro ao exportar tarefas:", error)
-      toast({
-        title: "Erro ao exportar",
-        description: "Não foi possível exportar as tarefas.",
-        variant: "destructive",
-      })
-    }
-  }
-
-  // Importar tarefas de arquivo JSON
-  const importTasks = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file && file.type === "application/json") {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        try {
-          const result = e.target?.result as string
-          const importedTasks = JSON.parse(result)
-
-          if (Array.isArray(importedTasks) && importedTasks.every(isValidTask)) {
-            setTasks(importedTasks)
-            setHasUnsavedChanges(true)
-            toast({
-              title: "Tarefas importadas!",
-              description: `${importedTasks.length} tarefas foram importadas com sucesso.`,
-            })
-          } else {
-            throw new Error("Formato de arquivo inválido")
-          }
-        } catch (error) {
-          console.error("Erro ao importar tarefas:", error)
-          toast({
-            title: "Erro ao importar",
-            description: "Arquivo inválido ou corrompido.",
-            variant: "destructive",
-          })
-        }
-      }
-      reader.readAsText(file)
-    } else {
-      toast({
-        title: "Arquivo inválido",
-        description: "Por favor, selecione um arquivo JSON válido.",
-        variant: "destructive",
-      })
+      setTasks(
+        (data ?? []).map((row: any) => ({
+          id: row.id,
+          title: row.title ?? "",
+          description: row.description ?? "",
+          status: row.status,
+          priority: row.priority,
+          images: Array.isArray(row.images) ? row.images : [],
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        })),
+      )
     }
 
-    event.target.value = ""
-  }
+    load()
 
-  const isValidTask = (task: any): task is Task => {
-    return (
-      typeof task === "object" &&
-      typeof task.id === "string" &&
-      typeof task.title === "string" &&
-      typeof task.description === "string" &&
-      ["todo", "inprogress", "completed"].includes(task.status) &&
-      typeof task.createdAt === "string" &&
-      typeof task.updatedAt === "string" &&
-      ["low", "medium", "high"].includes(task.priority) &&
-      Array.isArray(task.images)
-    )
-  }
+    return () => {
+      cancelled = true
+    }
+  }, [userId, toast])
 
-  const handleAddTask = () => {
+  const handleAddTask = async () => {
     if (!taskTitle.trim()) return
 
-    const newTask: Task = {
-      id: Date.now().toString(),
-      title: taskTitle,
-      description: taskDescription,
-      status: "todo",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      priority: taskPriority,
-      images: taskImages,
-    }
+    const now = new Date().toISOString()
 
     if (editingTask) {
+      const { data, error } = await supabase
+        .from("user_tasks")
+        .update({
+          title: taskTitle.trim(),
+          description: taskDescription,
+          priority: taskPriority,
+          images: taskImages,
+          updated_at: now,
+        })
+        .eq("id", editingTask.id)
+        .eq("user_id", userId)
+        .select("id, title, description, status, priority, images, created_at, updated_at")
+        .single()
+
+      if (error || !data) {
+        toast({
+          title: "Erro ao salvar",
+          description: "Não foi possível salvar a tarefa.",
+          variant: "destructive",
+        })
+        return
+      }
+
       setTasks(
-        tasks.map((task) =>
-          task.id === editingTask.id ? { ...newTask, id: editingTask.id, createdAt: editingTask.createdAt } : task,
+        tasks.map((t) =>
+          t.id === editingTask.id
+            ? {
+                id: data.id,
+                title: data.title ?? "",
+                description: data.description ?? "",
+                status: data.status,
+                priority: data.priority,
+                images: Array.isArray(data.images) ? data.images : [],
+                createdAt: data.created_at,
+                updatedAt: data.updated_at,
+              }
+            : t,
         ),
       )
     } else {
-      setTasks([...tasks, newTask])
+      const { data, error } = await supabase
+        .from("user_tasks")
+        .insert({
+          user_id: userId,
+          title: taskTitle.trim(),
+          description: taskDescription,
+          status: "todo",
+          priority: taskPriority,
+          images: taskImages,
+          created_at: now,
+          updated_at: now,
+        })
+        .select("id, title, description, status, priority, images, created_at, updated_at")
+        .single()
+
+      if (error || !data) {
+        toast({
+          title: "Erro ao criar",
+          description: "Não foi possível criar a tarefa.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      setTasks([
+        {
+          id: data.id,
+          title: data.title ?? "",
+          description: data.description ?? "",
+          status: data.status,
+          priority: data.priority,
+          images: Array.isArray(data.images) ? data.images : [],
+          createdAt: data.created_at,
+          updatedAt: data.updated_at,
+        },
+        ...tasks,
+      ])
     }
 
     resetForm()
-    setHasUnsavedChanges(true)
   }
 
   const handleEditTask = (task: Task) => {
@@ -276,9 +224,19 @@ export function TasksSection() {
     setIsDialogOpen(true)
   }
 
-  const handleDeleteTask = (taskId: string) => {
+  const handleDeleteTask = async (taskId: string) => {
+    const prev = tasks
     setTasks(tasks.filter((task) => task.id !== taskId))
-    setHasUnsavedChanges(true)
+
+    const { error } = await supabase.from("user_tasks").delete().eq("id", taskId).eq("user_id", userId)
+    if (error) {
+      setTasks(prev)
+      toast({
+        title: "Erro ao remover",
+        description: "Não foi possível remover a tarefa.",
+        variant: "destructive",
+      })
+    }
   }
 
   const resetForm = () => {
@@ -330,12 +288,22 @@ export function TasksSection() {
     setDragOverStatus(null)
 
     if (draggedTask && draggedTask.status !== newStatus) {
-      setTasks(
-        tasks.map((task) =>
-          task.id === draggedTask.id ? { ...task, status: newStatus, updatedAt: new Date().toISOString() } : task,
-        ),
-      )
-      setHasUnsavedChanges(true)
+      const updatedAt = new Date().toISOString()
+      setTasks(tasks.map((task) => (task.id === draggedTask.id ? { ...task, status: newStatus, updatedAt } : task)))
+      supabase
+        .from("user_tasks")
+        .update({ status: newStatus, updated_at: updatedAt })
+        .eq("id", draggedTask.id)
+        .eq("user_id", userId)
+        .then(({ error }) => {
+          if (error) {
+            toast({
+              title: "Erro ao mover",
+              description: "Não foi possível atualizar o status da tarefa.",
+              variant: "destructive",
+            })
+          }
+        })
     }
     setDraggedTask(null)
   }
@@ -460,34 +428,6 @@ export function TasksSection() {
             </div>
           </DialogContent>
         </Dialog>
-
-        <Button
-          onClick={saveTasks}
-          variant={hasUnsavedChanges ? "default" : "outline"}
-          className={hasUnsavedChanges ? "bg-green-600 hover:bg-green-700" : ""}
-        >
-          <Save className="h-4 w-4 mr-2" />
-          {hasUnsavedChanges ? "Salvar Tarefas*" : "Tarefas Salvas"}
-        </Button>
-
-        <Button onClick={exportTasks} variant="outline">
-          <Download className="h-4 w-4 mr-2" />
-          Exportar
-        </Button>
-
-        <div>
-          <Input type="file" accept=".json" onChange={importTasks} className="hidden" id="import-tasks" />
-          <Button variant="outline" asChild>
-            <label htmlFor="import-tasks" className="cursor-pointer">
-              <Upload className="h-4 w-4 mr-2" />
-              Importar
-            </label>
-          </Button>
-        </div>
-
-        {hasUnsavedChanges && (
-          <span className="text-yellow-300 text-sm flex items-center">* Você tem alterações não salvas</span>
-        )}
       </div>
 
       {/* Kanban Board */}

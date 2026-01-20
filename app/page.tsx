@@ -72,6 +72,11 @@ export default function Dashboard() {
   const [uploadedImages, setUploadedImages] = useState<Array<{ id: string; name: string; url: string; storagePath: string }>>([])
   const [uploadedVideos, setUploadedVideos] = useState<Array<{ id: string; name: string; url: string; storagePath: string }>>([])
 
+  const [playlistEnabled, setPlaylistEnabled] = useState(false)
+  const [playlistIntervalSec, setPlaylistIntervalSec] = useState(30)
+  const [playlistSelectedImageIds, setPlaylistSelectedImageIds] = useState<string[]>([])
+  const [playlistIndex, setPlaylistIndex] = useState(0)
+
   // Carregar sessão do Supabase e observar mudanças
   useEffect(() => {
     let mounted = true
@@ -165,6 +170,60 @@ export default function Dashboard() {
     }
   }, [isAuthenticated, userId])
 
+  useEffect(() => {
+    if (!userId) return
+    try {
+      const raw = localStorage.getItem(`playlist:${userId}`)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      if (typeof parsed?.enabled === "boolean") setPlaylistEnabled(parsed.enabled)
+      if (typeof parsed?.intervalSec === "number" && Number.isFinite(parsed.intervalSec)) {
+        setPlaylistIntervalSec(Math.max(3, Math.min(3600, Math.floor(parsed.intervalSec))))
+      }
+      if (Array.isArray(parsed?.selectedImageIds)) {
+        setPlaylistSelectedImageIds(parsed.selectedImageIds.filter((x: any) => typeof x === "string"))
+      }
+    } catch {
+      return
+    }
+  }, [userId])
+
+  useEffect(() => {
+    if (!userId) return
+    try {
+      localStorage.setItem(
+        `playlist:${userId}`,
+        JSON.stringify({
+          enabled: playlistEnabled,
+          intervalSec: playlistIntervalSec,
+          selectedImageIds: playlistSelectedImageIds,
+        }),
+      )
+    } catch {
+      return
+    }
+  }, [userId, playlistEnabled, playlistIntervalSec, playlistSelectedImageIds])
+
+  useEffect(() => {
+    if (!playlistEnabled) return
+
+    const items = uploadedImages.filter((x) => playlistSelectedImageIds.includes(x.id))
+    if (items.length === 0) return
+
+    const nextIndex = ((playlistIndex % items.length) + items.length) % items.length
+    const next = items[nextIndex]
+    if (next?.url) setWallpaper(next.url)
+
+    const ms = Math.max(3, Math.min(3600, playlistIntervalSec)) * 1000
+    const t = window.setInterval(() => {
+      setPlaylistIndex((prev) => prev + 1)
+    }, ms)
+
+    return () => {
+      window.clearInterval(t)
+    }
+  }, [playlistEnabled, playlistIntervalSec, playlistSelectedImageIds, uploadedImages, playlistIndex])
+
   // Editar nome do usuário
   const handleNameEdit = () => {
     if (newName.trim()) {
@@ -206,7 +265,7 @@ export default function Dashboard() {
       case "drawing":
         return <DrawingSection />
       case "tasks":
-        return <TasksSection />
+        return userId ? <TasksSection userId={userId} /> : null
       default:
         return (
           <div className="space-y-6">
@@ -479,7 +538,39 @@ export default function Dashboard() {
                 {/* Imagens carregadas */}
                 {uploadedImages.length > 0 && (
                   <div className="mt-6">
-                    <h3 className="text-lg font-semibold mb-3">Suas Imagens</h3>
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <h3 className="text-lg font-semibold">Suas Imagens</h3>
+                      <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 select-none">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={playlistEnabled}
+                            onChange={(e) => {
+                              const enabled = e.target.checked
+                              setPlaylistEnabled(enabled)
+                              if (enabled) setPlaylistIndex(0)
+                            }}
+                          />
+                          Playlist
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-gray-600 dark:text-gray-300">Tempo (s)</span>
+                          <Input
+                            type="number"
+                            min={3}
+                            max={3600}
+                            value={playlistIntervalSec}
+                            onChange={(e) => {
+                              const v = Number(e.target.value)
+                              if (!Number.isFinite(v)) return
+                              setPlaylistIntervalSec(Math.max(3, Math.min(3600, Math.floor(v))))
+                            }}
+                            className="w-24"
+                          />
+                        </div>
+                      </div>
+                    </div>
                     <div className="grid grid-cols-2 gap-4">
                       {uploadedImages.map((wp) => (
                         <div
@@ -490,6 +581,24 @@ export default function Dashboard() {
                           )}
                           onClick={() => handleWallpaperChange(wp.url)}
                         >
+                          <label
+                            className="absolute top-2 left-2 z-10 flex items-center gap-2 rounded bg-black/40 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              className="h-3.5 w-3.5"
+                              checked={playlistSelectedImageIds.includes(wp.id)}
+                              onChange={(e) => {
+                                const checked = e.target.checked
+                                setPlaylistSelectedImageIds((prev) => {
+                                  if (checked) return prev.includes(wp.id) ? prev : [wp.id, ...prev]
+                                  return prev.filter((id) => id !== wp.id)
+                                })
+                              }}
+                            />
+                            Playlist
+                          </label>
                           <img
                             src={wp.url || "/placeholder.svg"}
                             alt={wp.name}
