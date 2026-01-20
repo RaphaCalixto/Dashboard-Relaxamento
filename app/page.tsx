@@ -37,6 +37,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useTheme } from "next-themes"
 import { supabase } from "@/lib/supabaseClient"
+import { useToast } from "@/hooks/use-toast"
 
 const wallpapers = [
   { name: "Oceano", url: "/images/ocean-bg.png" },
@@ -58,14 +59,18 @@ export default function Dashboard() {
   const [activeSection, setActiveSection] = useState("overview")
   const [wallpaper, setWallpaper] = useState(wallpapers[0].url)
   const [customWallpaperUrl, setCustomWallpaperUrl] = useState("")
-  const [uploadedWallpapers, setUploadedWallpapers] = useState<Array<{ name: string; url: string }>>([])
   const [userName, setUserName] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isAuthReady, setIsAuthReady] = useState(false)
   const [isEditingName, setIsEditingName] = useState(false)
   const [newName, setNewName] = useState("")
   const { theme } = useTheme()
+  const { toast } = useToast()
+
+  const [uploadedImages, setUploadedImages] = useState<Array<{ id: string; name: string; url: string; storagePath: string }>>([])
+  const [uploadedVideos, setUploadedVideos] = useState<Array<{ id: string; name: string; url: string; storagePath: string }>>([])
 
   // Carregar sessão do Supabase e observar mudanças
   useEffect(() => {
@@ -78,6 +83,7 @@ export default function Dashboard() {
       if (mounted) {
         setUserName(typeof name === "string" && name.trim() ? name : null)
         setUserEmail(typeof user?.email === "string" ? user.email : null)
+        setUserId(typeof user?.id === "string" ? user.id : null)
         setIsAuthenticated(!!user)
         setIsAuthReady(true)
       }
@@ -91,6 +97,7 @@ export default function Dashboard() {
       if (mounted) {
         setUserName(typeof name === "string" && name.trim() ? name : null)
         setUserEmail(typeof user?.email === "string" ? user.email : null)
+        setUserId(typeof user?.id === "string" ? user.id : null)
         setIsAuthenticated(!!user)
         setIsAuthReady(true)
       }
@@ -107,6 +114,56 @@ export default function Dashboard() {
   }
 
   const displayName = userName ?? (userEmail ? userEmail.split("@")[0] : "")
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadMedia = async () => {
+      if (!isAuthenticated || !userId) return
+
+      const { data, error } = await supabase
+        .from("user_media")
+        .select("id, original_name, kind, storage_path")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+
+      if (error) {
+        return
+      }
+
+      const images: Array<{ id: string; name: string; url: string; storagePath: string }> = []
+      const videos: Array<{ id: string; name: string; url: string; storagePath: string }> = []
+
+      for (const row of data ?? []) {
+        const { data: signed, error: signedError } = await supabase.storage
+          .from("user-media")
+          .createSignedUrl(row.storage_path, 60 * 60)
+
+        if (signedError || !signed?.signedUrl) continue
+
+        const item = {
+          id: row.id,
+          name: row.original_name,
+          url: signed.signedUrl,
+          storagePath: row.storage_path,
+        }
+
+        if (row.kind === "video") videos.push(item)
+        else images.push(item)
+      }
+
+      if (!cancelled) {
+        setUploadedImages(images)
+        setUploadedVideos(videos)
+      }
+    }
+
+    loadMedia()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isAuthenticated, userId])
 
   // Editar nome do usuário
   const handleNameEdit = () => {
@@ -232,27 +289,118 @@ export default function Dashboard() {
     }
   }
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
-    if (file && file.type.startsWith("image/")) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const result = e.target?.result as string
-        if (result) {
-          const newWallpaper = {
-            name: file.name.split(".")[0],
-            url: result,
-          }
-          setUploadedWallpapers((prev) => [...prev, newWallpaper])
-          setWallpaper(result)
-        }
+    event.target.value = ""
+
+    if (!file || !userId) return
+
+    const isVideo = file.type.startsWith("video/")
+    const isImage = file.type.startsWith("image/")
+
+    if (!isVideo && !isImage) {
+      toast({
+        title: "Formato não suportado",
+        description: "Envie uma imagem, gif ou vídeo.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const maxBytes = isVideo ? 25 * 1024 * 1024 : 5 * 1024 * 1024
+    if (file.size > maxBytes) {
+      toast({
+        title: "Arquivo muito grande",
+        description: isVideo ? "Vídeo: limite de 25MB" : "Imagem/GIF: limite de 5MB",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const ext = file.name.includes(".") ? file.name.split(".").pop() : ""
+      const safeExt = typeof ext === "string" ? ext.toLowerCase() : ""
+      const storagePath = `${userId}/${crypto.randomUUID()}${safeExt ? `.${safeExt}` : ""}`
+
+      const { error: uploadError } = await supabase.storage
+        .from("user-media")
+        .upload(storagePath, file, {
+          contentType: file.type,
+          upsert: false,
+        })
+
+      if (uploadError) throw uploadError
+
+      const kind = isVideo ? "video" : "image"
+
+      const { data: inserted, error: insertError } = await supabase
+        .from("user_media")
+        .insert({
+          user_id: userId,
+          kind,
+          storage_path: storagePath,
+          original_name: file.name,
+          size_bytes: file.size,
+          mime_type: file.type,
+        })
+        .select("id")
+        .single()
+
+      if (insertError) throw insertError
+
+      const { data: signed, error: signedError } = await supabase.storage
+        .from("user-media")
+        .createSignedUrl(storagePath, 60 * 60)
+
+      if (signedError || !signed?.signedUrl) throw signedError
+
+      const item = {
+        id: inserted.id,
+        name: file.name,
+        url: signed.signedUrl,
+        storagePath,
       }
-      reader.readAsDataURL(file)
+
+      if (kind === "video") {
+        setUploadedVideos((prev) => [item, ...prev])
+      } else {
+        setUploadedImages((prev) => [item, ...prev])
+        setWallpaper(item.url)
+      }
+
+      toast({
+        title: kind === "video" ? "Vídeo enviado" : "Imagem enviada",
+        description: "Salvo com sucesso.",
+      })
+    } catch (err: any) {
+      toast({
+        title: "Erro ao enviar",
+        description: err?.message ?? "Tente novamente.",
+        variant: "destructive",
+      })
     }
   }
 
-  const removeUploadedWallpaper = (index: number) => {
-    setUploadedWallpapers((prev) => prev.filter((_, i) => i !== index))
+  const removeUploadedMedia = async (id: string, storagePath: string, kind: "image" | "video") => {
+    try {
+      const { error: dbError } = await supabase.from("user_media").delete().eq("id", id)
+      if (dbError) throw dbError
+
+      const { error: storageError } = await supabase.storage.from("user-media").remove([storagePath])
+      if (storageError) throw storageError
+
+      if (kind === "video") {
+        setUploadedVideos((prev) => prev.filter((x) => x.id !== id))
+      } else {
+        setUploadedImages((prev) => prev.filter((x) => x.id !== id))
+      }
+    } catch (err: any) {
+      toast({
+        title: "Erro ao remover",
+        description: err?.message ?? "Tente novamente.",
+        variant: "destructive",
+      })
+    }
   }
 
   return (
@@ -305,17 +453,15 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* Upload de imagem local */}
+                {/* Upload local */}
                 <div className="mt-6">
                   <h3 className="text-lg font-semibold mb-3">Carregar do Computador</h3>
                   <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center">
                     <Upload className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                    <p className="text-gray-600 dark:text-gray-400 mb-4">
-                      Clique para selecionar uma imagem do seu computador
-                    </p>
+                    <p className="text-gray-600 dark:text-gray-400 mb-4">Clique para selecionar um arquivo do seu computador</p>
                     <Input
                       type="file"
-                      accept="image/*"
+                      accept="image/*,video/*"
                       onChange={handleFileUpload}
                       className="hidden"
                       id="wallpaper-upload"
@@ -323,21 +469,21 @@ export default function Dashboard() {
                     <Label htmlFor="wallpaper-upload" className="cursor-pointer">
                       <Button type="button" variant="outline" className="pointer-events-none">
                         <Upload className="h-4 w-4 mr-2" />
-                        Selecionar Imagem
+                        Selecionar Arquivo
                       </Button>
                     </Label>
-                    <p className="text-xs text-gray-500 mt-2">Formatos suportados: JPG, PNG, GIF, WebP</p>
+                    <p className="text-xs text-gray-500 mt-2">Imagem/GIF: até 5MB • Vídeo: até 25MB</p>
                   </div>
                 </div>
 
                 {/* Imagens carregadas */}
-                {uploadedWallpapers.length > 0 && (
+                {uploadedImages.length > 0 && (
                   <div className="mt-6">
                     <h3 className="text-lg font-semibold mb-3">Suas Imagens</h3>
                     <div className="grid grid-cols-2 gap-4">
-                      {uploadedWallpapers.map((wp, index) => (
+                      {uploadedImages.map((wp) => (
                         <div
-                          key={index}
+                          key={wp.id}
                           className={cn(
                             "relative aspect-video rounded-lg overflow-hidden cursor-pointer border-2 transition-all hover:opacity-90 active:opacity-75 group",
                             wallpaper === wp.url ? "border-blue-500" : "border-transparent",
@@ -357,12 +503,39 @@ export default function Dashboard() {
                               className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                removeUploadedWallpaper(index)
+                                removeUploadedMedia(wp.id, wp.storagePath, "image")
                               }}
                             >
                               ×
                             </Button>
                           </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {uploadedVideos.length > 0 && (
+                  <div className="mt-6">
+                    <h3 className="text-lg font-semibold mb-3">Seus Vídeos</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      {uploadedVideos.map((vp) => (
+                        <div
+                          key={vp.id}
+                          className="relative aspect-video rounded-lg overflow-hidden border-2 border-transparent group"
+                        >
+                          <video src={vp.url} className="w-full h-full object-cover" controls />
+                          <div className="absolute inset-0 bg-black/20 flex items-end p-2 pointer-events-none">
+                            <span className="text-white text-sm font-medium flex-1">{vp.name}</span>
+                          </div>
+                          <Button
+                            variant="destructive"
+                            size="icon"
+                            className="absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => removeUploadedMedia(vp.id, vp.storagePath, "video")}
+                          >
+                            ×
+                          </Button>
                         </div>
                       ))}
                     </div>
