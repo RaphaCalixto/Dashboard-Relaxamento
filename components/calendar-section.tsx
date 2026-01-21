@@ -459,6 +459,27 @@ export function CalendarSection({ userId }: CalendarSectionProps) {
                         {new Date(note.date + "T00:00:00").toLocaleDateString("pt-BR")}
                       </p>
                     </div>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => {
+                          setSelectedDate(note.date)
+                          handleEditNote(note)
+                        }}
+                      >
+                        <Edit className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-red-600 hover:text-red-700"
+                        onClick={() => handleDeleteNote(note.id)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               {notes.filter((note) => new Date(note.date + "T00:00:00") >= new Date()).length === 0 && (

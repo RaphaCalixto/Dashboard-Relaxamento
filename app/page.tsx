@@ -74,6 +74,31 @@ export default function Dashboard() {
   const [playlistSelectedImageIds, setPlaylistSelectedImageIds] = useState<string[]>([])
   const [playlistIndex, setPlaylistIndex] = useState(0)
 
+  useEffect(() => {
+    if (!isAuthenticated || !userId) return
+    try {
+      const raw = localStorage.getItem(`activeSection:${userId}`)
+      if (!raw) return
+
+      const allowed = new Set(["overview", "tasks", "music", "calendar", "drawing", "games"])
+      if (allowed.has(raw) && raw !== activeSection) {
+        setActiveSection(raw)
+      }
+    } catch {
+      return
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, userId])
+
+  useEffect(() => {
+    if (!isAuthenticated || !userId) return
+    try {
+      localStorage.setItem(`activeSection:${userId}`, activeSection)
+    } catch {
+      return
+    }
+  }, [isAuthenticated, userId, activeSection])
+
   // Carregar sessão do Supabase e observar mudanças
   useEffect(() => {
     let mounted = true
