@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, CalendarIcon, Save, Download, Upload } from "lucide-react"
+import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, CalendarIcon } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { supabase } from "@/lib/supabaseClient"
 
 type Note = {
   id: string
@@ -19,7 +20,11 @@ type Note = {
   color: string
 }
 
-export function CalendarSection() {
+type CalendarSectionProps = {
+  userId: string
+}
+
+export function CalendarSection({ userId }: CalendarSectionProps) {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [notes, setNotes] = useState<Note[]>([])
@@ -28,149 +33,46 @@ export function CalendarSection() {
   const [noteTitle, setNoteTitle] = useState("")
   const [noteDescription, setNoteDescription] = useState("")
   const [noteColor, setNoteColor] = useState("blue")
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const { toast } = useToast()
 
-  // Carregar notas do localStorage
   useEffect(() => {
-    const savedNotes = localStorage.getItem("calendar-notes")
-    if (savedNotes) {
-      try {
-        const parsedNotes = JSON.parse(savedNotes)
-        setNotes(parsedNotes)
-      } catch (error) {
-        console.error("Erro ao carregar anotações:", error)
-        // Se houver erro, criar notas de exemplo
-        initializeExampleNotes()
+    let cancelled = false
+
+    const load = async () => {
+      const { data, error } = await supabase
+        .from("user_calendar_notes")
+        .select("id, date, title, description, color, created_at, updated_at")
+        .eq("user_id", userId)
+        .order("date", { ascending: true })
+
+      if (cancelled) return
+
+      if (error) {
+        toast({
+          title: "Erro ao carregar",
+          description: "Não foi possível carregar suas anotações.",
+          variant: "destructive",
+        })
+        return
       }
-    } else {
-      // Adicionar algumas notas de exemplo
-      initializeExampleNotes()
-    }
-  }, [])
 
-  const initializeExampleNotes = () => {
-    const exampleNotes: Note[] = [
-      {
-        id: "1",
-        date: "2025-06-12",
-        title: "Aniversário do meu primeiro",
-        description: "Lembrar de comprar presente e organizar festa",
-        color: "pink",
-      },
-      {
-        id: "2",
-        date: "2025-06-15",
-        title: "Reunião importante",
-        description: "Apresentação do projeto às 14:00",
-        color: "blue",
-      },
-    ]
-    setNotes(exampleNotes)
-    setHasUnsavedChanges(true)
-  }
-
-  // Salvar anotações manualmente
-  const saveNotes = () => {
-    try {
-      localStorage.setItem("calendar-notes", JSON.stringify(notes))
-      setHasUnsavedChanges(false)
-      toast({
-        title: "Anotações salvas!",
-        description: "Suas anotações foram salvas com sucesso.",
-      })
-    } catch (error) {
-      console.error("Erro ao salvar anotações:", error)
-      toast({
-        title: "Erro ao salvar",
-        description: "Não foi possível salvar as anotações. Tente novamente.",
-        variant: "destructive",
-      })
-    }
-  }
-
-  // Exportar anotações como arquivo JSON
-  const exportNotes = () => {
-    try {
-      const dataStr = JSON.stringify(notes, null, 2)
-      const dataBlob = new Blob([dataStr], { type: "application/json" })
-      const url = URL.createObjectURL(dataBlob)
-      const link = document.createElement("a")
-      link.href = url
-      link.download = `anotacoes-calendario-${new Date().toISOString().split("T")[0]}.json`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
-
-      toast({
-        title: "Anotações exportadas!",
-        description: "Arquivo baixado com sucesso.",
-      })
-    } catch (error) {
-      console.error("Erro ao exportar anotações:", error)
-      toast({
-        title: "Erro ao exportar",
-        description: "Não foi possível exportar as anotações.",
-        variant: "destructive",
-      })
-    }
-  }
-
-  // Importar anotações de arquivo JSON
-  const importNotes = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file && file.type === "application/json") {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        try {
-          const result = e.target?.result as string
-          const importedNotes = JSON.parse(result)
-
-          // Validar estrutura das anotações
-          if (Array.isArray(importedNotes) && importedNotes.every(isValidNote)) {
-            setNotes(importedNotes)
-            setHasUnsavedChanges(true)
-            toast({
-              title: "Anotações importadas!",
-              description: `${importedNotes.length} anotações foram importadas com sucesso.`,
-            })
-          } else {
-            throw new Error("Formato de arquivo inválido")
-          }
-        } catch (error) {
-          console.error("Erro ao importar anotações:", error)
-          toast({
-            title: "Erro ao importar",
-            description: "Arquivo inválido ou corrompido.",
-            variant: "destructive",
-          })
-        }
-      }
-      reader.readAsText(file)
-    } else {
-      toast({
-        title: "Arquivo inválido",
-        description: "Por favor, selecione um arquivo JSON válido.",
-        variant: "destructive",
-      })
+      setNotes(
+        (data ?? []).map((row: any) => ({
+          id: row.id,
+          date: row.date,
+          title: row.title ?? "",
+          description: row.description ?? "",
+          color: row.color ?? "blue",
+        })),
+      )
     }
 
-    // Limpar o input
-    event.target.value = ""
-  }
+    load()
 
-  // Validar estrutura de uma anotação
-  const isValidNote = (note: any): note is Note => {
-    return (
-      typeof note === "object" &&
-      typeof note.id === "string" &&
-      typeof note.date === "string" &&
-      typeof note.title === "string" &&
-      typeof note.description === "string" &&
-      typeof note.color === "string"
-    )
-  }
+    return () => {
+      cancelled = true
+    }
+  }, [userId, toast])
 
   const colors = [
     { name: "blue", class: "bg-blue-500", label: "Azul" },
@@ -210,21 +112,62 @@ export function CalendarSection() {
     setSelectedDate(dateString)
   }
 
-  const handleAddNote = () => {
+  const handleAddNote = async () => {
     if (!selectedDate) return
 
-    const newNote: Note = {
-      id: Date.now().toString(),
-      date: selectedDate,
-      title: noteTitle,
-      description: noteDescription,
-      color: noteColor,
-    }
+    const dateToUse = selectedDate
+    const now = new Date().toISOString()
 
     if (editingNote) {
-      setNotes(notes.map((note) => (note.id === editingNote.id ? { ...newNote, id: editingNote.id } : note)))
+      const { data, error } = await supabase
+        .from("user_calendar_notes")
+        .update({
+          date: dateToUse,
+          title: noteTitle,
+          description: noteDescription,
+          color: noteColor,
+          updated_at: now,
+        })
+        .eq("id", editingNote.id)
+        .eq("user_id", userId)
+        .select("id, date, title, description, color")
+        .single()
+
+      if (error || !data) {
+        toast({
+          title: "Erro ao salvar",
+          description: "Não foi possível salvar a anotação.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      setNotes(notes.map((note) => (note.id === editingNote.id ? data : note)))
     } else {
-      setNotes([...notes, newNote])
+      const { data, error } = await supabase
+        .from("user_calendar_notes")
+        .insert({
+          user_id: userId,
+          date: dateToUse,
+          title: noteTitle,
+          description: noteDescription,
+          color: noteColor,
+          created_at: now,
+          updated_at: now,
+        })
+        .select("id, date, title, description, color")
+        .single()
+
+      if (error || !data) {
+        toast({
+          title: "Erro ao criar",
+          description: "Não foi possível criar a anotação.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      setNotes([...notes, data])
     }
 
     setNoteTitle("")
@@ -232,7 +175,6 @@ export function CalendarSection() {
     setNoteColor("blue")
     setEditingNote(null)
     setIsDialogOpen(false)
-    setHasUnsavedChanges(true)
   }
 
   const handleEditNote = (note: Note) => {
@@ -244,9 +186,19 @@ export function CalendarSection() {
     setIsDialogOpen(true)
   }
 
-  const handleDeleteNote = (noteId: string) => {
+  const handleDeleteNote = async (noteId: string) => {
+    const prev = notes
     setNotes(notes.filter((note) => note.id !== noteId))
-    setHasUnsavedChanges(true)
+
+    const { error } = await supabase.from("user_calendar_notes").delete().eq("id", noteId).eq("user_id", userId)
+    if (error) {
+      setNotes(prev)
+      toast({
+        title: "Erro ao remover",
+        description: "Não foi possível remover a anotação.",
+        variant: "destructive",
+      })
+    }
   }
 
   const monthNames = [
@@ -277,37 +229,6 @@ export function CalendarSection() {
       <div className="text-center">
         <h2 className="text-3xl font-bold text-white mb-2">Calendário</h2>
         <p className="text-gray-200">Organize suas anotações e compromissos</p>
-      </div>
-
-      {/* Barra de ações */}
-      <div className="flex flex-wrap gap-2 justify-center">
-        <Button
-          onClick={saveNotes}
-          variant={hasUnsavedChanges ? "default" : "outline"}
-          className={hasUnsavedChanges ? "bg-green-600 hover:bg-green-700" : ""}
-        >
-          <Save className="h-4 w-4 mr-2" />
-          {hasUnsavedChanges ? "Salvar Anotações*" : "Anotações Salvas"}
-        </Button>
-
-        <Button onClick={exportNotes} variant="outline">
-          <Download className="h-4 w-4 mr-2" />
-          Exportar
-        </Button>
-
-        <div>
-          <Input type="file" accept=".json" onChange={importNotes} className="hidden" id="import-notes" />
-          <Button variant="outline" asChild>
-            <label htmlFor="import-notes" className="cursor-pointer">
-              <Upload className="h-4 w-4 mr-2" />
-              Importar
-            </label>
-          </Button>
-        </div>
-
-        {hasUnsavedChanges && (
-          <span className="text-yellow-300 text-sm flex items-center">* Você tem alterações não salvas</span>
-        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

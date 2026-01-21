@@ -4,7 +4,6 @@ import type React from "react"
 
 import { useState, useEffect } from "react"
 import { GamesSection } from "@/components/games-section"
-import { AmbientSounds } from "@/components/ambient-sounds"
 import { MusicPlayer } from "@/components/music-player"
 import { CalendarSection } from "@/components/calendar-section"
 import { DrawingSection } from "@/components/drawing-section"
@@ -16,10 +15,8 @@ import { ClockWidget } from "@/components/clock-widget"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Brain,
-  Waves,
   Home,
   Gamepad2,
-  Volume2,
   Music,
   ImageIcon,
   Calendar,
@@ -256,12 +253,10 @@ export default function Dashboard() {
     switch (activeSection) {
       case "games":
         return <GamesSection />
-      case "sounds":
-        return <AmbientSounds />
       case "music":
         return <MusicPlayer />
       case "calendar":
-        return <CalendarSection />
+        return userId ? <CalendarSection userId={userId} /> : null
       case "drawing":
         return <DrawingSection />
       case "tasks":
@@ -284,19 +279,11 @@ export default function Dashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                   <div
                     className="text-center p-4 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-lg cursor-pointer hover:bg-white/60 dark:hover:bg-gray-800/60 transition-all"
-                    onClick={() => setActiveSection("sounds")}
+                    onClick={() => setActiveSection("tasks")}
                   >
-                    <Waves className="h-8 w-8 mx-auto mb-2 text-blue-600 dark:text-blue-400" />
-                    <h3 className="font-semibold text-blue-800 dark:text-blue-300">Sons Ambientes</h3>
-                    <p className="text-sm text-blue-600 dark:text-blue-400">Relaxe com sons da natureza</p>
-                  </div>
-                  <div
-                    className="text-center p-4 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-lg cursor-pointer hover:bg-white/60 dark:hover:bg-gray-800/60 transition-all"
-                    onClick={() => setActiveSection("games")}
-                  >
-                    <Gamepad2 className="h-8 w-8 mx-auto mb-2 text-green-600 dark:text-green-400" />
-                    <h3 className="font-semibold text-green-800 dark:text-green-300">Jogos</h3>
-                    <p className="text-sm text-green-600 dark:text-green-400">Exercite sua mente</p>
+                    <CheckSquare className="h-8 w-8 mx-auto mb-2 text-indigo-600 dark:text-indigo-400" />
+                    <h3 className="font-semibold text-indigo-800 dark:text-indigo-300">Tarefas</h3>
+                    <p className="text-sm text-indigo-600 dark:text-indigo-400">Organize seus projetos</p>
                   </div>
                   <div
                     className="text-center p-4 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-lg cursor-pointer hover:bg-white/60 dark:hover:bg-gray-800/60 transition-all"
@@ -324,11 +311,11 @@ export default function Dashboard() {
                   </div>
                   <div
                     className="text-center p-4 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-lg cursor-pointer hover:bg-white/60 dark:hover:bg-gray-800/60 transition-all"
-                    onClick={() => setActiveSection("tasks")}
+                    onClick={() => setActiveSection("games")}
                   >
-                    <CheckSquare className="h-8 w-8 mx-auto mb-2 text-indigo-600 dark:text-indigo-400" />
-                    <h3 className="font-semibold text-indigo-800 dark:text-indigo-300">Tarefas</h3>
-                    <p className="text-sm text-indigo-600 dark:text-indigo-400">Organize seus projetos</p>
+                    <Gamepad2 className="h-8 w-8 mx-auto mb-2 text-green-600 dark:text-green-400" />
+                    <h3 className="font-semibold text-green-800 dark:text-green-300">Jogos</h3>
+                    <p className="text-sm text-green-600 dark:text-green-400">Exercite sua mente</p>
                   </div>
                 </div>
               </CardContent>
@@ -753,12 +740,11 @@ export default function Dashboard() {
             <div className="flex justify-center space-x-2 p-1">
               {[
                 { id: "overview", icon: Home, label: "Visão Geral" },
-                { id: "games", icon: Gamepad2, label: "Jogos" },
-                { id: "sounds", icon: Volume2, label: "Sons" },
+                { id: "tasks", icon: CheckSquare, label: "Tarefas" },
                 { id: "music", icon: Music, label: "Música" },
                 { id: "calendar", icon: Calendar, label: "Calendário" },
                 { id: "drawing", icon: Palette, label: "Desenho" },
-                { id: "tasks", icon: CheckSquare, label: "Tarefas" },
+                { id: "games", icon: Gamepad2, label: "Jogos" },
               ].map((item) => (
                 <Button
                   key={item.id}
