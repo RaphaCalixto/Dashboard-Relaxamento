@@ -21,13 +21,33 @@ import {
 } from "@xyflow/react"
 import { toPng } from "html-to-image"
 import { jsPDF } from "jspdf"
-import { Circle, Diamond, FileImage, FileText, Plus, RectangleHorizontal, Save, Trash2 } from "lucide-react"
+import {
+  BarChart3,
+  Brain,
+  Building2,
+  Circle,
+  Clock3,
+  Diamond,
+  FileImage,
+  FileText,
+  GitBranch,
+  Network,
+  Palette,
+  Plus,
+  RectangleHorizontal,
+  Repeat,
+  Save,
+  Shuffle,
+  Trash2,
+  Wand2,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabaseClient"
 import { cn } from "@/lib/utils"
@@ -48,6 +68,7 @@ type WhiteboardNodeData = {
 type WhiteboardContent = {
   nodes: Node<WhiteboardNodeData>[]
   edges: Edge[]
+  themeId: string
   viewport: {
     x: number
     y: number
@@ -69,10 +90,137 @@ type WhiteboardSectionProps = {
 const MIN_NODE_SIZE = 80
 const MAX_NODE_SIZE = 420
 const DEFAULT_NODE_SIZE = { width: 180, height: 90 }
+const DEFAULT_THEME_ID = "corporativo-azul"
+
+const TEMPLATE_BUTTONS = [
+  { id: "flowchart", label: "Fluxograma", icon: GitBranch },
+  { id: "mindmap", label: "Mapa Mental", icon: Brain },
+  { id: "infographic", label: "Infografico", icon: BarChart3 },
+  { id: "hierarchy", label: "Hierarquia", icon: Network },
+  { id: "process", label: "Processo", icon: Repeat },
+  { id: "organizational", label: "Organizacional", icon: Building2 },
+  { id: "timeline", label: "Linha do Tempo", icon: Clock3 },
+  { id: "zigzag", label: "Zigzag", icon: Shuffle },
+] as const
+
+type TemplateId = (typeof TEMPLATE_BUTTONS)[number]["id"]
+
+type WhiteboardTheme = {
+  id: string
+  name: string
+  canvasBg: string
+  panelBg: string
+  panelBorder: string
+  dotColor: string
+  edgeColor: string
+  nodePalette: string[]
+  textColor: string
+  accent: string
+}
+
+const WHITEBOARD_THEMES: WhiteboardTheme[] = [
+  {
+    id: "corporativo-azul",
+    name: "Corporativo Azul",
+    canvasBg: "#050d1d",
+    panelBg: "#0c1629",
+    panelBorder: "#1c2e4e",
+    dotColor: "#23416e",
+    edgeColor: "#8eb4e7",
+    nodePalette: ["#18b7df", "#2ba7d3", "#2f8cb9", "#2e6f9f"],
+    textColor: "#edf6ff",
+    accent: "#18b7df",
+  },
+  {
+    id: "verde-tecnologico",
+    name: "Verde Tecnologico",
+    canvasBg: "#07180f",
+    panelBg: "#0a2018",
+    panelBorder: "#1c4c39",
+    dotColor: "#215f42",
+    edgeColor: "#67d7a3",
+    nodePalette: ["#10b981", "#0f9f6f", "#0f855f", "#1f6f59"],
+    textColor: "#ebfff5",
+    accent: "#1dd47e",
+  },
+  {
+    id: "gradiente-moderno",
+    name: "Gradiente Moderno",
+    canvasBg: "#0a0f26",
+    panelBg: "#111630",
+    panelBorder: "#2f3770",
+    dotColor: "#3c4891",
+    edgeColor: "#b5beff",
+    nodePalette: ["#7c3aed", "#6366f1", "#3b82f6", "#06b6d4"],
+    textColor: "#f3f5ff",
+    accent: "#7c3aed",
+  },
+  {
+    id: "minimalista-clean",
+    name: "Minimalista Clean",
+    canvasBg: "#101215",
+    panelBg: "#171b22",
+    panelBorder: "#2e353d",
+    dotColor: "#3b434d",
+    edgeColor: "#a3acb8",
+    nodePalette: ["#4b5563", "#5b6572", "#6b7280", "#8d97a5"],
+    textColor: "#f3f4f6",
+    accent: "#9ca3af",
+  },
+  {
+    id: "executivo-premium",
+    name: "Executivo Premium",
+    canvasBg: "#07132a",
+    panelBg: "#0f1f3a",
+    panelBorder: "#2d4b80",
+    dotColor: "#3f64a1",
+    edgeColor: "#78a9ff",
+    nodePalette: ["#1d4ed8", "#2563eb", "#3b82f6", "#60a5fa"],
+    textColor: "#ecf4ff",
+    accent: "#3b82f6",
+  },
+  {
+    id: "cores-quentes",
+    name: "Cores Quentes",
+    canvasBg: "#1c0f10",
+    panelBg: "#2a1718",
+    panelBorder: "#5d2b2d",
+    dotColor: "#744242",
+    edgeColor: "#f7a34a",
+    nodePalette: ["#f59e0b", "#f97316", "#ef4444", "#ec4899"],
+    textColor: "#fff6ef",
+    accent: "#fb923c",
+  },
+  {
+    id: "natureza",
+    name: "Natureza",
+    canvasBg: "#0b1714",
+    panelBg: "#13231f",
+    panelBorder: "#2b5b4e",
+    dotColor: "#366f5f",
+    edgeColor: "#7dd3b8",
+    nodePalette: ["#34d399", "#10b981", "#2dd4bf", "#22c55e"],
+    textColor: "#ecfdf5",
+    accent: "#22c55e",
+  },
+  {
+    id: "infografico-circular",
+    name: "Infografico Circular",
+    canvasBg: "#0f1022",
+    panelBg: "#171832",
+    panelBorder: "#333768",
+    dotColor: "#484f95",
+    edgeColor: "#9ba8ff",
+    nodePalette: ["#22d3ee", "#a855f7", "#f59e0b", "#ef4444"],
+    textColor: "#f7f8ff",
+    accent: "#22d3ee",
+  },
+]
 
 const emptyBoard: WhiteboardContent = {
   nodes: [],
   edges: [],
+  themeId: DEFAULT_THEME_ID,
   viewport: { x: 0, y: 0, zoom: 1 },
 }
 
@@ -96,29 +244,38 @@ const normalizeHexColor = (value: unknown, fallback: string) => {
   return token
 }
 
-const buildNode = (id: string, position: { x: number; y: number }, shape: NodeShape): Node<WhiteboardNodeData> => ({
+const getThemeById = (themeId: string) => WHITEBOARD_THEMES.find((theme) => theme.id === themeId) ?? WHITEBOARD_THEMES[0]
+
+const getThemeColor = (theme: WhiteboardTheme, index: number) => theme.nodePalette[index % theme.nodePalette.length] ?? theme.accent
+
+const buildNode = (
+  id: string,
+  position: { x: number; y: number },
+  shape: NodeShape,
+  overrides?: Partial<WhiteboardNodeData>,
+): Node<WhiteboardNodeData> => ({
   id,
   type: "shapeNode",
   position,
   data: {
-    label: "Novo bloco",
+    label: overrides?.label ?? "Novo bloco",
     shape,
-    fillColor: "#f8fafc",
-    textColor: "#0f172a",
-    width: DEFAULT_NODE_SIZE.width,
-    height: DEFAULT_NODE_SIZE.height,
+    fillColor: overrides?.fillColor ?? "#f8fafc",
+    textColor: overrides?.textColor ?? "#0f172a",
+    width: overrides?.width ?? DEFAULT_NODE_SIZE.width,
+    height: overrides?.height ?? DEFAULT_NODE_SIZE.height,
   },
 })
 
-const decorateEdge = (edge: Edge): Edge => ({
+const decorateEdge = (edge: Edge, edgeColor = "#475569"): Edge => ({
   ...edge,
   type: edge.type ?? "smoothstep",
-  markerEnd: edge.markerEnd ?? {
+  markerEnd: {
     type: MarkerType.ArrowClosed,
-    color: "#475569",
+    color: edgeColor,
   },
   style: {
-    stroke: "#475569",
+    stroke: edgeColor,
     strokeWidth: 2,
     ...(edge.style ?? {}),
   },
@@ -176,7 +333,10 @@ const deserializeContent = (raw: unknown): WhiteboardContent => {
     zoom: sanitizeNumber(content.viewport?.zoom, 1, 0.1, 4),
   }
 
-  return { nodes, edges, viewport }
+  const rawThemeId = typeof content.themeId === "string" ? content.themeId : DEFAULT_THEME_ID
+  const themeId = WHITEBOARD_THEMES.some((theme) => theme.id === rawThemeId) ? rawThemeId : DEFAULT_THEME_ID
+
+  return { nodes, edges, themeId, viewport }
 }
 
 const serializeContent = (content: WhiteboardContent) => ({
@@ -206,6 +366,7 @@ const serializeContent = (content: WhiteboardContent) => ({
     style: edge.style,
     markerEnd: edge.markerEnd,
   })),
+  themeId: content.themeId,
   viewport: content.viewport,
 })
 
@@ -266,6 +427,148 @@ const slugify = (value: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)+/g, "") || "quadro"
 
+const buildLinearTemplate = (
+  labels: string[],
+  shapes: NodeShape[],
+  theme: WhiteboardTheme,
+): { nodes: Node<WhiteboardNodeData>[]; edges: Edge[] } => {
+  const nodes = labels.map((label, index) =>
+    buildNode(
+      crypto.randomUUID(),
+      { x: 120 + index * 230, y: 220 + (index % 2 === 0 ? 0 : 36) },
+      shapes[index] ?? "rounded",
+      {
+        label,
+        fillColor: getThemeColor(theme, index),
+        textColor: theme.textColor,
+        width: shapes[index] === "circle" ? 136 : 188,
+        height: shapes[index] === "circle" ? 136 : 88,
+      },
+    ),
+  )
+
+  const edges = nodes
+    .slice(0, -1)
+    .map((node, index) =>
+      decorateEdge(
+        {
+          id: crypto.randomUUID(),
+          source: node.id,
+          target: nodes[index + 1]?.id ?? "",
+        },
+        theme.edgeColor,
+      ),
+    )
+
+  return { nodes, edges }
+}
+
+const buildTemplate = (
+  templateId: TemplateId,
+  theme: WhiteboardTheme,
+  hint?: string,
+): { nodes: Node<WhiteboardNodeData>[]; edges: Edge[]; viewport: WhiteboardContent["viewport"] } => {
+  const cleanHint = hint?.trim()
+  const parsed = cleanHint
+    ? cleanHint
+        .split(/[>\n;,|]/)
+        .map((part) => part.trim())
+        .filter(Boolean)
+    : []
+
+  if (templateId === "flowchart") {
+    const labels = parsed.length >= 3 ? parsed.slice(0, 10) : ["Inicio", "Planejamento", "Execucao", "Monitoramento", "Concluido"]
+    const shapeCycle: NodeShape[] = ["rounded", "rectangle", "diamond", "circle", "rounded"]
+    const shapes = labels.map((_, index) => shapeCycle[index % shapeCycle.length] ?? "rounded")
+    const linear = buildLinearTemplate(labels, shapes, theme)
+    return { nodes: linear.nodes, edges: linear.edges, viewport: { x: -80, y: -80, zoom: 0.86 } }
+  }
+
+  if (templateId === "mindmap") {
+    const center = buildNode(crypto.randomUUID(), { x: 560, y: 220 }, "circle", {
+      label: cleanHint || "Tema Central",
+      fillColor: getThemeColor(theme, 0),
+      textColor: theme.textColor,
+      width: 170,
+      height: 170,
+    })
+
+    const branchLabels = parsed.length >= 4 ? parsed.slice(0, 8) : ["Ideia 1", "Ideia 2", "Ideia 3", "Ideia 4", "Detalhes", "Acoes"]
+    const nodes = [center]
+    const edges: Edge[] = []
+
+    branchLabels.forEach((label, index) => {
+      const angle = (Math.PI * 2 * index) / branchLabels.length
+      const child = buildNode(
+        crypto.randomUUID(),
+        {
+          x: 560 + Math.cos(angle) * 320,
+          y: 220 + Math.sin(angle) * 320,
+        },
+        index % 2 === 0 ? "rounded" : "rectangle",
+        {
+          label,
+          fillColor: getThemeColor(theme, index + 1),
+          textColor: theme.textColor,
+          width: 170,
+          height: 84,
+        },
+      )
+      nodes.push(child)
+      edges.push(
+        decorateEdge(
+          {
+            id: crypto.randomUUID(),
+            source: center.id,
+            target: child.id,
+          },
+          theme.edgeColor,
+        ),
+      )
+    })
+
+    return { nodes, edges, viewport: { x: -220, y: -180, zoom: 0.72 } }
+  }
+
+  if (templateId === "timeline") {
+    const labels = parsed.length >= 3 ? parsed.slice(0, 10) : ["Q1", "Q2", "Q3", "Q4", "Lancamento"]
+    const nodes = labels.map((label, index) =>
+      buildNode(
+        crypto.randomUUID(),
+        { x: 140 + index * 240, y: index % 2 === 0 ? 200 : 340 },
+        index % 2 === 0 ? "circle" : "rounded",
+        {
+          label,
+          fillColor: getThemeColor(theme, index),
+          textColor: theme.textColor,
+          width: index % 2 === 0 ? 128 : 176,
+          height: index % 2 === 0 ? 128 : 84,
+        },
+      ),
+    )
+    const edges = nodes
+      .slice(0, -1)
+      .map((node, index) =>
+        decorateEdge(
+          {
+            id: crypto.randomUUID(),
+            source: node.id,
+            target: nodes[index + 1]?.id ?? "",
+          },
+          theme.edgeColor,
+        ),
+      )
+    return { nodes, edges, viewport: { x: -80, y: -90, zoom: 0.84 } }
+  }
+
+  const fallbackLabels =
+    parsed.length >= 3 ? parsed.slice(0, 8) : ["Inicio", "Planejamento", "Execucao", "Analise", "Resultado", "Concluido"]
+  const fallbackShapes: NodeShape[] = ["rounded", "rectangle", "diamond", "circle", "rectangle", "rounded", "diamond", "circle"]
+  const linear = buildLinearTemplate(fallbackLabels, fallbackShapes, theme)
+
+  return { nodes: linear.nodes, edges: linear.edges, viewport: { x: -80, y: -80, zoom: 0.86 } }
+}
+
 export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
   const { toast } = useToast()
 
@@ -280,6 +583,8 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<WhiteboardNodeData>>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 })
+  const [themeId, setThemeId] = useState(DEFAULT_THEME_ID)
+  const [diagramPrompt, setDiagramPrompt] = useState("")
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance<Node<WhiteboardNodeData>, Edge> | null>(null)
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
@@ -293,6 +598,7 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
 
   const activeBoard = useMemo(() => boards.find((board) => board.id === activeBoardId) ?? null, [boards, activeBoardId])
   const selectedNode = useMemo(() => nodes.find((node) => node.id === selectedNodeId) ?? null, [nodes, selectedNodeId])
+  const activeTheme = useMemo(() => getThemeById(themeId), [themeId])
 
   const applyBoardContent = useCallback(
     async (content: WhiteboardContent) => {
@@ -300,6 +606,7 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
       setNodes(content.nodes)
       setEdges(content.edges)
       setViewport(content.viewport)
+      setThemeId(content.themeId)
       setSelectedNodeId(null)
       setSelectedEdgeId(null)
 
@@ -316,9 +623,17 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
 
   const createBoard = useCallback(
     async (nameOverride?: string) => {
+      const theme = getThemeById(DEFAULT_THEME_ID)
       const content: WhiteboardContent = {
-        nodes: [buildNode(crypto.randomUUID(), { x: 80, y: 50 }, "rounded")],
+        nodes: [
+          buildNode(crypto.randomUUID(), { x: 120, y: 100 }, "rounded", {
+            label: "Novo fluxo",
+            fillColor: getThemeColor(theme, 0),
+            textColor: theme.textColor,
+          }),
+        ],
         edges: [],
+        themeId: DEFAULT_THEME_ID,
         viewport: { x: 0, y: 0, zoom: 1 },
       }
 
@@ -477,7 +792,7 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
 
     const timer = window.setTimeout(async () => {
       const updatedAt = new Date().toISOString()
-      const payload = serializeContent({ nodes, edges, viewport })
+      const payload = serializeContent({ nodes, edges, themeId, viewport })
 
       setIsSaving(true)
       const { error } = await supabase
@@ -519,24 +834,27 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
     return () => {
       window.clearTimeout(timer)
     }
-  }, [activeBoardId, edges, isHydratingBoard, isLoading, nodes, supportsWhiteboards, toast, userId, viewport])
+  }, [activeBoardId, edges, isHydratingBoard, isLoading, nodes, supportsWhiteboards, themeId, toast, userId, viewport])
 
   const handleConnect = useCallback(
     (connection: Connection) => {
       setEdges((currentEdges) =>
         addEdge(
-          decorateEdge({
-            id: crypto.randomUUID(),
-            source: connection.source ?? "",
-            target: connection.target ?? "",
-            sourceHandle: connection.sourceHandle ?? undefined,
-            targetHandle: connection.targetHandle ?? undefined,
-          }),
+          decorateEdge(
+            {
+              id: crypto.randomUUID(),
+              source: connection.source ?? "",
+              target: connection.target ?? "",
+              sourceHandle: connection.sourceHandle ?? undefined,
+              targetHandle: connection.targetHandle ?? undefined,
+            },
+            activeTheme.edgeColor,
+          ),
           currentEdges,
         ),
       )
     },
-    [setEdges],
+    [setEdges, activeTheme.edgeColor],
   )
 
   const addNode = (shape: NodeShape) => {
@@ -553,7 +871,12 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
       return reactFlowInstance.screenToFlowPosition(center)
     })()
 
-    const node = buildNode(crypto.randomUUID(), basePosition, shape)
+    const node = buildNode(crypto.randomUUID(), basePosition, shape, {
+      fillColor: getThemeColor(activeTheme, nodes.length),
+      textColor: activeTheme.textColor,
+      width: shape === "circle" ? 132 : DEFAULT_NODE_SIZE.width,
+      height: shape === "circle" ? 132 : DEFAULT_NODE_SIZE.height,
+    })
     setNodes((prev) => [...prev, node])
     setSelectedNodeId(node.id)
   }
@@ -644,6 +967,69 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
     void applyBoardContent(nextBoard.content)
   }
 
+  const applyThemePreset = (nextThemeId: string) => {
+    const theme = getThemeById(nextThemeId)
+    setThemeId(nextThemeId)
+
+    setEdges((prev) => prev.map((edge) => decorateEdge(edge, theme.edgeColor)))
+    setNodes((prev) =>
+      prev.map((node, index) => ({
+        ...node,
+        data: {
+          ...node.data,
+          fillColor: getThemeColor(theme, index),
+          textColor: theme.textColor,
+        },
+      })),
+    )
+  }
+
+  const applyTemplateById = (templateId: TemplateId, promptHint?: string) => {
+    const template = buildTemplate(templateId, activeTheme, promptHint)
+    setNodes(template.nodes)
+    setEdges(template.edges)
+    setViewport(template.viewport)
+    setSelectedNodeId(null)
+    setSelectedEdgeId(null)
+    if (reactFlowInstance) {
+      void reactFlowInstance.setViewport(template.viewport, { duration: 260 })
+    }
+  }
+
+  const handleGenerateDiagram = () => {
+    const prompt = diagramPrompt.trim()
+    if (!prompt) {
+      toast({
+        title: "Descreva seu diagrama",
+        description: "Digite uma ideia para gerar a estrutura inicial.",
+      })
+      return
+    }
+
+    applyTemplateById("flowchart", prompt)
+    toast({
+      title: "Diagrama gerado",
+      description: "Template aplicado com base na sua descricao.",
+    })
+  }
+
+  const resetCurrentBoard = () => {
+    setNodes([
+      buildNode(crypto.randomUUID(), { x: 120, y: 100 }, "rounded", {
+        label: "Novo bloco",
+        fillColor: getThemeColor(activeTheme, 0),
+        textColor: activeTheme.textColor,
+      }),
+    ])
+    setEdges([])
+    setViewport({ x: 0, y: 0, zoom: 1 })
+    setSelectedNodeId(null)
+    setSelectedEdgeId(null)
+    if (reactFlowInstance) {
+      void reactFlowInstance.setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 220 })
+    }
+  }
+
   const exportAsPng = async () => {
     if (!canvasRef.current || !activeBoard) return
 
@@ -651,7 +1037,7 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
       const dataUrl = await toPng(canvasRef.current, {
         cacheBust: true,
         pixelRatio: Math.max(1, exportScale),
-        backgroundColor: transparentExport ? "transparent" : "#ffffff",
+        backgroundColor: transparentExport ? "transparent" : activeTheme.canvasBg,
       })
 
       const link = document.createElement("a")
@@ -674,7 +1060,7 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
       const dataUrl = await toPng(canvasRef.current, {
         cacheBust: true,
         pixelRatio: Math.max(1, exportScale),
-        backgroundColor: "#ffffff",
+        backgroundColor: activeTheme.canvasBg,
       })
 
       const rect = canvasRef.current.getBoundingClientRect()
@@ -699,15 +1085,11 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="text-center">
-        <h2 className="text-3xl font-bold text-white mb-2">Quadro Branco Colaborativo</h2>
-        <p className="text-gray-200">Monte fluxogramas, mapas mentais e diagramas com canvas infinito.</p>
-      </div>
+    <div className="w-full space-y-4">
 
       {!supportsWhiteboards && (
-        <Card className="bg-amber-50/90 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700">
-          <CardContent className="py-3 text-sm text-amber-900 dark:text-amber-200">
+        <Card className="bg-amber-50/90 border-amber-300">
+          <CardContent className="py-3 text-sm text-amber-900">
             Para habilitar o quadro branco, execute a migracao SQL `supabase/migrations/20260317_create_user_whiteboards.sql`.
           </CardContent>
         </Card>
@@ -715,65 +1097,212 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
 
       {supportsWhiteboards && (
         <div className="space-y-4">
-          <Card className="bg-white/85 dark:bg-slate-900/85 backdrop-blur-md border-none shadow-lg">
-            <CardContent className="p-4 flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="whiteboard-select">Quadro</Label>
-                <select
-                  id="whiteboard-select"
-                  className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
-                  value={activeBoardId ?? ""}
-                  onChange={(e) => setActiveBoardId(e.target.value)}
-                  disabled={isLoading || boards.length === 0}
-                >
-                  {boards.map((board) => (
-                    <option key={board.id} value={board.id}>
-                      {board.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          <Card
+            className="border backdrop-blur-sm"
+            style={{
+              backgroundColor: `${activeTheme.panelBg}dd`,
+              borderColor: activeTheme.panelBorder,
+            }}
+          >
+            <CardContent className="p-3 md:p-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="min-w-[220px] flex items-center gap-2 text-slate-100">
+                  <div
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold"
+                    style={{ backgroundColor: activeTheme.accent, color: activeTheme.textColor }}
+                  >
+                    F
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">FlowGen</p>
+                    <p className="text-xs text-slate-300">Gerador inteligente de diagramas</p>
+                  </div>
+                </div>
 
-              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="whiteboard-select" className="text-slate-200">
+                    Quadro
+                  </Label>
+                  <select
+                    id="whiteboard-select"
+                    className="h-9 rounded-md border px-3 text-sm text-slate-100"
+                    style={{
+                      borderColor: activeTheme.panelBorder,
+                      backgroundColor: activeTheme.canvasBg,
+                    }}
+                    value={activeBoardId ?? ""}
+                    onChange={(e) => setActiveBoardId(e.target.value)}
+                    disabled={isLoading || boards.length === 0}
+                  >
+                    {boards.map((board) => (
+                      <option key={board.id} value={board.id}>
+                        {board.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <Input
                   value={boardNameInput}
                   onChange={(e) => setBoardNameInput(e.target.value)}
-                  className="w-48"
+                  className="h-9 w-[230px] text-slate-100"
+                  style={{
+                    borderColor: activeTheme.panelBorder,
+                    backgroundColor: activeTheme.canvasBg,
+                  }}
                   placeholder="Nome do quadro"
                   disabled={!activeBoardId}
                 />
-                <Button type="button" variant="outline" onClick={renameActiveBoard} disabled={!activeBoardId}>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 text-slate-100"
+                  style={{ borderColor: activeTheme.panelBorder, backgroundColor: activeTheme.canvasBg }}
+                  onClick={renameActiveBoard}
+                  disabled={!activeBoardId}
+                >
                   <Save className="h-4 w-4 mr-2" />
                   Renomear
                 </Button>
-              </div>
 
-              <Button type="button" onClick={() => void createBoard()}>
-                <Plus className="h-4 w-4 mr-2" />
-                Novo Quadro
-              </Button>
-              <Button type="button" variant="destructive" onClick={deleteActiveBoard} disabled={!activeBoardId}>
-                <Trash2 className="h-4 w-4 mr-2" />
-                Excluir
-              </Button>
-
-              <div className="ml-auto flex items-center gap-2">
-                {isSaving ? (
-                  <Badge className="bg-amber-500 text-white border-transparent">Salvando...</Badge>
-                ) : (
-                  <Badge className="bg-emerald-600 text-white border-transparent">Salvo</Badge>
-                )}
+                <div className="ml-auto flex items-center gap-2">
+                  <Button type="button" className="h-9" onClick={() => void createBoard()}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Novo
+                  </Button>
+                  <Button type="button" className="h-9" onClick={exportAsPng}>
+                    <FileImage className="h-4 w-4 mr-2" />
+                    Exportar
+                  </Button>
+                  <Button type="button" variant="destructive" className="h-9" onClick={deleteActiveBoard} disabled={!activeBoardId}>
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Excluir
+                  </Button>
+                  {isSaving ? (
+                    <Badge className="bg-amber-500 text-white border-transparent">Salvando...</Badge>
+                  ) : (
+                    <Badge className="bg-emerald-600 text-white border-transparent">Salvo</Badge>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-4">
-            <Card className="bg-white/85 dark:bg-slate-900/85 backdrop-blur-md border-none shadow-lg">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
+            <Card
+              className="h-[74vh] border"
+              style={{
+                backgroundColor: `${activeTheme.panelBg}e6`,
+                borderColor: activeTheme.panelBorder,
+              }}
+            >
               <CardHeader className="pb-3">
-                <CardTitle className="text-base text-slate-800 dark:text-slate-100">Canvas Infinito</CardTitle>
+                <CardTitle className="text-sm uppercase tracking-wide text-slate-200">Descreva seu diagrama</CardTitle>
               </CardHeader>
-              <CardContent className="pt-0">
-                <div ref={canvasRef} className="h-[68vh] rounded-lg overflow-hidden border border-slate-300 dark:border-slate-700">
+              <CardContent className="space-y-4">
+                <Textarea
+                  value={diagramPrompt}
+                  onChange={(e) => setDiagramPrompt(e.target.value)}
+                  placeholder="Ex: Fluxo de atendimento ao cliente > triagem > aprovacao > entrega"
+                  rows={4}
+                  className="resize-none text-slate-100"
+                  style={{ borderColor: activeTheme.panelBorder, backgroundColor: activeTheme.canvasBg }}
+                />
+
+                <Button
+                  type="button"
+                  className="w-full"
+                  style={{ backgroundColor: activeTheme.accent, color: activeTheme.textColor }}
+                  onClick={handleGenerateDiagram}
+                >
+                  <Wand2 className="h-4 w-4 mr-2" />
+                  Gerar Diagrama
+                </Button>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-300">Templates rapidos</h4>
+                    <Button type="button" variant="ghost" className="h-7 px-2 text-xs text-slate-300" onClick={resetCurrentBoard}>
+                      Limpar
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {TEMPLATE_BUTTONS.map((template) => {
+                      const Icon = template.icon
+                      return (
+                        <Button
+                          key={template.id}
+                          type="button"
+                          variant="outline"
+                          className="h-10 justify-start gap-2 text-xs text-slate-100"
+                          style={{ borderColor: activeTheme.panelBorder, backgroundColor: activeTheme.canvasBg }}
+                          onClick={() => applyTemplateById(template.id)}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                          {template.label}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-300">Tema de cores</h4>
+                  <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
+                    {WHITEBOARD_THEMES.map((theme) => {
+                      const selected = theme.id === themeId
+                      return (
+                        <button
+                          key={theme.id}
+                          type="button"
+                          className={cn(
+                            "w-full rounded-md border px-2.5 py-2 text-left transition",
+                            selected ? "ring-2 ring-cyan-400" : "hover:border-slate-400",
+                          )}
+                          style={{
+                            borderColor: theme.panelBorder,
+                            backgroundColor: theme.panelBg,
+                          }}
+                          onClick={() => applyThemePreset(theme.id)}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm text-slate-100">{theme.name}</span>
+                            <Palette className="h-3.5 w-3.5 text-slate-300" />
+                          </div>
+                          <div className="mt-2 flex items-center gap-1.5">
+                            {theme.nodePalette.map((dot) => (
+                              <span
+                                key={`${theme.id}-${dot}`}
+                                className="h-3.5 w-3.5 rounded-full border border-white/10"
+                                style={{ backgroundColor: dot }}
+                              />
+                            ))}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card
+              className="h-[74vh] border"
+              style={{
+                backgroundColor: activeTheme.canvasBg,
+                borderColor: activeTheme.panelBorder,
+              }}
+            >
+              <CardContent className="h-full p-2 md:p-3">
+                <div
+                  ref={canvasRef}
+                  className="h-full w-full rounded-lg overflow-hidden border"
+                  style={{
+                    borderColor: activeTheme.panelBorder,
+                    backgroundColor: activeTheme.canvasBg,
+                  }}
+                >
                   <ReactFlow
                     nodes={nodes}
                     edges={edges}
@@ -796,55 +1325,97 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
                       setSelectedNodeId(null)
                     }}
                     fitView
+                    minZoom={0.2}
+                    maxZoom={2.5}
                     proOptions={{ hideAttribution: true }}
                   >
-                    <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
-                    <MiniMap pannable zoomable />
-                    <Controls />
+                    <Background variant={BackgroundVariant.Dots} gap={20} size={1} color={activeTheme.dotColor} />
+                    <MiniMap
+                      pannable
+                      zoomable
+                      nodeColor={(node) => node.data?.fillColor || activeTheme.accent}
+                      style={{
+                        background: activeTheme.panelBg,
+                        border: `1px solid ${activeTheme.panelBorder}`,
+                      }}
+                    />
+                    <Controls
+                      style={{
+                        background: activeTheme.panelBg,
+                        border: `1px solid ${activeTheme.panelBorder}`,
+                        color: activeTheme.textColor,
+                      }}
+                    />
                   </ReactFlow>
                 </div>
               </CardContent>
             </Card>
 
-            <div className="space-y-4">
-              <Card className="bg-white/85 dark:bg-slate-900/85 backdrop-blur-md border-none shadow-lg">
+            <div className="space-y-4 h-[74vh] overflow-y-auto pr-1">
+              <Card className="border" style={{ backgroundColor: `${activeTheme.panelBg}e6`, borderColor: activeTheme.panelBorder }}>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base text-slate-800 dark:text-slate-100">Adicionar Blocos</CardTitle>
+                  <CardTitle className="text-base text-slate-100">Adicionar Blocos</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <div className="grid grid-cols-2 gap-2">
-                    <Button type="button" variant="outline" onClick={() => addNode("rectangle")}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="text-slate-100"
+                      style={{ borderColor: activeTheme.panelBorder, backgroundColor: activeTheme.canvasBg }}
+                      onClick={() => addNode("rectangle")}
+                    >
                       <RectangleHorizontal className="h-4 w-4 mr-2" />
                       Retangulo
                     </Button>
-                    <Button type="button" variant="outline" onClick={() => addNode("rounded")}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="text-slate-100"
+                      style={{ borderColor: activeTheme.panelBorder, backgroundColor: activeTheme.canvasBg }}
+                      onClick={() => addNode("rounded")}
+                    >
                       <RectangleHorizontal className="h-4 w-4 mr-2" />
                       Cartao
                     </Button>
-                    <Button type="button" variant="outline" onClick={() => addNode("circle")}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="text-slate-100"
+                      style={{ borderColor: activeTheme.panelBorder, backgroundColor: activeTheme.canvasBg }}
+                      onClick={() => addNode("circle")}
+                    >
                       <Circle className="h-4 w-4 mr-2" />
                       Circulo
                     </Button>
-                    <Button type="button" variant="outline" onClick={() => addNode("diamond")}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="text-slate-100"
+                      style={{ borderColor: activeTheme.panelBorder, backgroundColor: activeTheme.canvasBg }}
+                      onClick={() => addNode("diamond")}
+                    >
                       <Diamond className="h-4 w-4 mr-2" />
                       Losango
                     </Button>
                   </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-400">
+                  <p className="text-xs text-slate-300">
                     Arraste para reposicionar e puxe das alcas para conectar o fluxo.
                   </p>
                 </CardContent>
               </Card>
 
-              <Card className="bg-white/85 dark:bg-slate-900/85 backdrop-blur-md border-none shadow-lg">
+              <Card className="border" style={{ backgroundColor: `${activeTheme.panelBg}e6`, borderColor: activeTheme.panelBorder }}>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base text-slate-800 dark:text-slate-100">Edicao</CardTitle>
+                  <CardTitle className="text-base text-slate-100">Edicao</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {selectedNode ? (
                     <>
                       <div>
-                        <Label htmlFor="node-label">Nome do bloco</Label>
+                        <Label htmlFor="node-label" className="text-slate-200">
+                          Nome do bloco
+                        </Label>
                         <Input
                           id="node-label"
                           value={selectedNode.data.label}
@@ -854,11 +1425,15 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
                               label: e.target.value,
                             }))
                           }
+                          className="text-slate-100"
+                          style={{ borderColor: activeTheme.panelBorder, backgroundColor: activeTheme.canvasBg }}
                         />
                       </div>
 
                       <div>
-                        <Label htmlFor="node-shape">Forma</Label>
+                        <Label htmlFor="node-shape" className="text-slate-200">
+                          Forma
+                        </Label>
                         <select
                           id="node-shape"
                           value={selectedNode.data.shape}
@@ -868,7 +1443,8 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
                               shape: normalizeNodeShape(e.target.value),
                             }))
                           }
-                          className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                          className="w-full rounded-md border px-3 py-2 text-sm text-slate-100"
+                          style={{ borderColor: activeTheme.panelBorder, backgroundColor: activeTheme.canvasBg }}
                         >
                           <option value="rectangle">Retangulo</option>
                           <option value="rounded">Cartao</option>
@@ -879,7 +1455,9 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
 
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <Label htmlFor="node-fill">Cor do bloco</Label>
+                          <Label htmlFor="node-fill" className="text-slate-200">
+                            Cor do bloco
+                          </Label>
                           <Input
                             id="node-fill"
                             type="color"
@@ -894,7 +1472,9 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
                           />
                         </div>
                         <div>
-                          <Label htmlFor="node-text">Cor do texto</Label>
+                          <Label htmlFor="node-text" className="text-slate-200">
+                            Cor do texto
+                          </Label>
                           <Input
                             id="node-text"
                             type="color"
@@ -911,7 +1491,7 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
                       </div>
 
                       <div>
-                        <Label>Tamanho</Label>
+                        <Label className="text-slate-200">Tamanho</Label>
                         <div className="grid grid-cols-2 gap-2 mt-1">
                           <Input
                             type="number"
@@ -924,6 +1504,8 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
                                 width: sanitizeNumber(e.target.value, data.width, MIN_NODE_SIZE, MAX_NODE_SIZE),
                               }))
                             }
+                            className="text-slate-100"
+                            style={{ borderColor: activeTheme.panelBorder, backgroundColor: activeTheme.canvasBg }}
                           />
                           <Input
                             type="number"
@@ -936,6 +1518,8 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
                                 height: sanitizeNumber(e.target.value, data.height, MIN_NODE_SIZE, MAX_NODE_SIZE),
                               }))
                             }
+                            className="text-slate-100"
+                            style={{ borderColor: activeTheme.panelBorder, backgroundColor: activeTheme.canvasBg }}
                           />
                         </div>
                       </div>
@@ -951,20 +1535,20 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
                       Excluir Conexao
                     </Button>
                   ) : (
-                    <p className="text-sm text-slate-600 dark:text-slate-400">
+                    <p className="text-sm text-slate-300">
                       Selecione um bloco ou conexao para editar ou excluir.
                     </p>
                   )}
                 </CardContent>
               </Card>
 
-              <Card className="bg-white/85 dark:bg-slate-900/85 backdrop-blur-md border-none shadow-lg">
+              <Card className="border" style={{ backgroundColor: `${activeTheme.panelBg}e6`, borderColor: activeTheme.panelBorder }}>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base text-slate-800 dark:text-slate-100">Exportacao</CardTitle>
+                  <CardTitle className="text-base text-slate-100">Exportacao</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div>
-                    <Label>Upscale ({exportScale}x)</Label>
+                    <Label className="text-slate-200">Upscale ({exportScale}x)</Label>
                     <Slider
                       min={1}
                       max={4}
@@ -975,7 +1559,7 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
                     />
                   </div>
 
-                  <label className="flex items-center gap-2 text-sm">
+                  <label className="flex items-center gap-2 text-sm text-slate-200">
                     <input
                       type="checkbox"
                       className="h-4 w-4"
@@ -990,13 +1574,19 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
                       <FileImage className="h-4 w-4 mr-2" />
                       PNG
                     </Button>
-                    <Button type="button" variant="outline" onClick={exportAsPdf}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={exportAsPdf}
+                      className="text-slate-100"
+                      style={{ borderColor: activeTheme.panelBorder, backgroundColor: activeTheme.canvasBg }}
+                    >
                       <FileText className="h-4 w-4 mr-2" />
                       PDF
                     </Button>
                   </div>
 
-                  <p className="text-xs text-slate-600 dark:text-slate-400">
+                  <p className="text-xs text-slate-300">
                     O quadro salva automaticamente no banco enquanto voce edita.
                   </p>
                 </CardContent>

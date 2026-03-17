@@ -846,7 +846,9 @@ export default function Dashboard() {
 
         {/* Conteúdo principal */}
         <main className="flex-1 overflow-auto px-4 py-6">
-          <div className="container mx-auto max-w-6xl">{renderContent()}</div>
+          <div className={cn("container mx-auto", activeSection === "whiteboard" ? "max-w-[96vw]" : "max-w-6xl")}>
+            {renderContent()}
+          </div>
         </main>
 
         {/* Navegação inferior */}
