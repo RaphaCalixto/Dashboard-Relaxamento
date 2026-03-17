@@ -8,6 +8,7 @@ import { MusicPlayer } from "@/components/music-player"
 import { CalendarSection } from "@/components/calendar-section"
 import { DrawingSection } from "@/components/drawing-section"
 import { TasksSection } from "@/components/tasks-section"
+import { WhiteboardSection } from "@/components/whiteboard-section"
 import { AuthScreen } from "@/components/auth-screen"
 import { WeatherWidget } from "@/components/weather-widget"
 import { CurrencyWidget } from "@/components/currency-widget"
@@ -23,6 +24,7 @@ import {
   Palette,
   Upload,
   CheckSquare,
+  Workflow,
   User,
   Edit,
 } from "lucide-react"
@@ -93,7 +95,7 @@ export default function Dashboard() {
       const raw = localStorage.getItem(`activeSection:${userId}`)
       if (!raw) return
 
-      const allowed = new Set(["overview", "tasks", "music", "calendar", "drawing", "games"])
+      const allowed = new Set(["overview", "tasks", "whiteboard", "music", "calendar", "drawing", "games"])
       if (allowed.has(raw) && raw !== activeSection) {
         setActiveSection(raw)
       }
@@ -358,6 +360,8 @@ export default function Dashboard() {
         return <DrawingSection />
       case "tasks":
         return userId ? <TasksSection userId={userId} /> : null
+      case "whiteboard":
+        return userId ? <WhiteboardSection userId={userId} /> : null
       default:
         return (
           <div className="space-y-6">
@@ -852,6 +856,7 @@ export default function Dashboard() {
               {[
                 { id: "overview", icon: Home, label: "Visão Geral" },
                 { id: "tasks", icon: CheckSquare, label: "Tarefas" },
+                { id: "whiteboard", icon: Workflow, label: "Quadro" },
                 { id: "music", icon: Music, label: "Música" },
                 { id: "calendar", icon: Calendar, label: "Calendário" },
                 { id: "drawing", icon: Palette, label: "Desenho" },

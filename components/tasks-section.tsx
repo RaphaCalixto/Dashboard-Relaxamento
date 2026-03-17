@@ -24,6 +24,7 @@ import {
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabaseClient"
+import { cn } from "@/lib/utils"
 
 type TaskStatus = "todo" | "inprogress" | "completed"
 type TaskCategory = "work" | "home" | "personal" | "other"
@@ -90,6 +91,13 @@ const categoryLabelMap: Record<TaskCategory, string> = {
   home: "Casa",
   personal: "Pessoal",
   other: "Outros",
+}
+
+const categoryBadgeColorMap: Record<TaskCategory, string> = {
+  work: "bg-blue-600 text-white border-transparent",
+  home: "bg-emerald-600 text-white border-transparent",
+  personal: "bg-violet-600 text-white border-transparent",
+  other: "bg-slate-600 text-white border-transparent",
 }
 
 const normalizeTaskCategory = (value: unknown): TaskCategory | null => {
@@ -635,7 +643,9 @@ export function TasksSection({ userId }: TasksSectionProps) {
 
                         {task.category && (
                           <div className="mb-3">
-                            <Badge variant="secondary">{categoryLabelMap[task.category]}</Badge>
+                            <Badge className={cn("font-semibold", categoryBadgeColorMap[task.category])}>
+                              {categoryLabelMap[task.category]}
+                            </Badge>
                           </div>
                         )}
 

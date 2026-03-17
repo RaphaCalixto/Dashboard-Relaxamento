@@ -67,3 +67,4 @@ Raphael Calixto
 Para usar categorias nas tarefas, execute no SQL Editor do Supabase:
 
 - `supabase/migrations/20260317_add_user_tasks_category.sql`
+- `supabase/migrations/20260317_create_user_whiteboards.sql`
