@@ -93,9 +93,21 @@ const categoryLabelMap: Record<TaskCategory, string> = {
 }
 
 const normalizeTaskCategory = (value: unknown): TaskCategory | null => {
-  if (value === "work" || value === "home" || value === "personal" || value === "other") {
-    return value
-  }
+  if (typeof value !== "string") return null
+
+  const token = value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+
+  if (!token) return null
+
+  if (token === "work" || token === "trabalho" || token === "profissional") return "work"
+  if (token === "home" || token === "casa" || token === "lar" || token === "domestico") return "home"
+  if (token === "personal" || token === "pessoal") return "personal"
+  if (token === "other" || token === "outro" || token === "outros" || token === "geral") return "other"
+
   return null
 }
 
@@ -189,8 +201,14 @@ export function TasksSection({ userId }: TasksSectionProps) {
     try {
       const raw = localStorage.getItem(`tasksCategoryFilter:${userId}`)
       if (!raw) return
-      if (raw === "all" || raw === "uncategorized" || raw === "work" || raw === "home" || raw === "personal" || raw === "other") {
+      if (raw === "all" || raw === "uncategorized") {
         setSelectedCategoryFilter(raw)
+        return
+      }
+
+      const normalized = normalizeTaskCategory(raw)
+      if (normalized) {
+        setSelectedCategoryFilter(normalized)
       }
     } catch {
       return
