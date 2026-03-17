@@ -52,9 +52,20 @@ const wallpapers = [
   },
 ]
 
+type WallpaperSelection = {
+  type: "default" | "uploaded" | "custom"
+  value: string
+}
+
+const defaultWallpaperSelection: WallpaperSelection = {
+  type: "default",
+  value: wallpapers[0].url,
+}
+
 export default function Dashboard() {
   const [activeSection, setActiveSection] = useState("overview")
   const [wallpaper, setWallpaper] = useState(wallpapers[0].url)
+  const [wallpaperSelection, setWallpaperSelection] = useState<WallpaperSelection>(defaultWallpaperSelection)
   const [customWallpaperUrl, setCustomWallpaperUrl] = useState("")
   const [userName, setUserName] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
@@ -73,6 +84,8 @@ export default function Dashboard() {
   const [playlistIntervalSec, setPlaylistIntervalSec] = useState(30)
   const [playlistSelectedImageIds, setPlaylistSelectedImageIds] = useState<string[]>([])
   const [playlistIndex, setPlaylistIndex] = useState(0)
+  const [isWallpaperHydrated, setIsWallpaperHydrated] = useState(false)
+  const [isPlaylistHydrated, setIsPlaylistHydrated] = useState(false)
 
   useEffect(() => {
     if (!isAuthenticated || !userId) return
@@ -194,24 +207,82 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!userId) return
+
+    setIsWallpaperHydrated(false)
+
+    let nextSelection: WallpaperSelection = defaultWallpaperSelection
     try {
-      const raw = localStorage.getItem(`playlist:${userId}`)
-      if (!raw) return
-      const parsed = JSON.parse(raw)
-      if (typeof parsed?.enabled === "boolean") setPlaylistEnabled(parsed.enabled)
-      if (typeof parsed?.intervalSec === "number" && Number.isFinite(parsed.intervalSec)) {
-        setPlaylistIntervalSec(Math.max(3, Math.min(3600, Math.floor(parsed.intervalSec))))
-      }
-      if (Array.isArray(parsed?.selectedImageIds)) {
-        setPlaylistSelectedImageIds(parsed.selectedImageIds.filter((x: any) => typeof x === "string"))
+      const raw = localStorage.getItem(`wallpaper:${userId}`)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        const isTypeValid = parsed?.type === "default" || parsed?.type === "uploaded" || parsed?.type === "custom"
+        const isValueValid = typeof parsed?.value === "string" && parsed.value.trim().length > 0
+        if (isTypeValid && isValueValid) {
+          nextSelection = { type: parsed.type, value: parsed.value }
+        }
       }
     } catch {
+      nextSelection = defaultWallpaperSelection
+    }
+
+    setWallpaperSelection(nextSelection)
+    if (nextSelection.type === "uploaded") {
+      setWallpaper(defaultWallpaperSelection.value)
+    } else {
+      setWallpaper(nextSelection.value)
+    }
+    setIsWallpaperHydrated(true)
+  }, [userId])
+
+  useEffect(() => {
+    if (!userId || !isWallpaperHydrated) return
+    try {
+      localStorage.setItem(`wallpaper:${userId}`, JSON.stringify(wallpaperSelection))
+    } catch {
       return
+    }
+  }, [userId, wallpaperSelection, isWallpaperHydrated])
+
+  useEffect(() => {
+    if (playlistEnabled) return
+    if (wallpaperSelection.type !== "uploaded") return
+
+    const selected = uploadedImages.find((x) => x.id === wallpaperSelection.value)
+    if (selected?.url) {
+      setWallpaper(selected.url)
+    }
+  }, [wallpaperSelection, uploadedImages, playlistEnabled])
+
+  useEffect(() => {
+    if (!userId) return
+    setIsPlaylistHydrated(false)
+    try {
+      const raw = localStorage.getItem(`playlist:${userId}`)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (typeof parsed?.enabled === "boolean") setPlaylistEnabled(parsed.enabled)
+        if (typeof parsed?.intervalSec === "number" && Number.isFinite(parsed.intervalSec)) {
+          setPlaylistIntervalSec(Math.max(3, Math.min(3600, Math.floor(parsed.intervalSec))))
+        }
+        if (Array.isArray(parsed?.selectedImageIds)) {
+          setPlaylistSelectedImageIds(parsed.selectedImageIds.filter((x: any) => typeof x === "string"))
+        }
+        if (typeof parsed?.index === "number" && Number.isFinite(parsed.index)) {
+          setPlaylistIndex(Math.max(0, Math.floor(parsed.index)))
+        }
+      }
+    } catch {
+      setPlaylistEnabled(false)
+      setPlaylistIntervalSec(30)
+      setPlaylistSelectedImageIds([])
+      setPlaylistIndex(0)
+    } finally {
+      setIsPlaylistHydrated(true)
     }
   }, [userId])
 
   useEffect(() => {
-    if (!userId) return
+    if (!userId || !isPlaylistHydrated) return
     try {
       localStorage.setItem(
         `playlist:${userId}`,
@@ -219,12 +290,13 @@ export default function Dashboard() {
           enabled: playlistEnabled,
           intervalSec: playlistIntervalSec,
           selectedImageIds: playlistSelectedImageIds,
+          index: playlistIndex,
         }),
       )
     } catch {
       return
     }
-  }, [userId, playlistEnabled, playlistIntervalSec, playlistSelectedImageIds])
+  }, [userId, playlistEnabled, playlistIntervalSec, playlistSelectedImageIds, playlistIndex, isPlaylistHydrated])
 
   useEffect(() => {
     if (!playlistEnabled) return
@@ -350,13 +422,21 @@ export default function Dashboard() {
     }
   }
 
-  const handleWallpaperChange = (url: string) => {
-    setWallpaper(url)
+  const handleWallpaperChange = (selection: WallpaperSelection, url?: string) => {
+    setWallpaperSelection(selection)
+
+    if (selection.type === "uploaded") {
+      if (url) setWallpaper(url)
+      return
+    }
+
+    setWallpaper(url ?? selection.value)
   }
 
   const handleCustomWallpaper = () => {
-    if (customWallpaperUrl) {
-      setWallpaper(customWallpaperUrl)
+    const nextUrl = customWallpaperUrl.trim()
+    if (nextUrl) {
+      handleWallpaperChange({ type: "custom", value: nextUrl })
     }
   }
 
@@ -436,7 +516,7 @@ export default function Dashboard() {
         setUploadedVideos((prev) => [item, ...prev])
       } else {
         setUploadedImages((prev) => [item, ...prev])
-        setWallpaper(item.url)
+        handleWallpaperChange({ type: "uploaded", value: item.id }, item.url)
       }
 
       toast({
@@ -464,6 +544,12 @@ export default function Dashboard() {
         setUploadedVideos((prev) => prev.filter((x) => x.id !== id))
       } else {
         setUploadedImages((prev) => prev.filter((x) => x.id !== id))
+        setPlaylistSelectedImageIds((prev) => prev.filter((x) => x !== id))
+
+        if (wallpaperSelection.type === "uploaded" && wallpaperSelection.value === id) {
+          setWallpaperSelection(defaultWallpaperSelection)
+          setWallpaper(defaultWallpaperSelection.value)
+        }
       }
     } catch (err: any) {
       toast({
@@ -513,7 +599,7 @@ export default function Dashboard() {
                           "relative aspect-video rounded-lg overflow-hidden cursor-pointer border-2 transition-all hover:opacity-90 active:opacity-75",
                           wallpaper === wp.url ? "border-blue-500" : "border-transparent",
                         )}
-                        onClick={() => handleWallpaperChange(wp.url)}
+                        onClick={() => handleWallpaperChange({ type: "default", value: wp.url })}
                       >
                         <img src={wp.url || "/placeholder.svg"} alt={wp.name} className="w-full h-full object-cover" />
                         <div className="absolute inset-0 bg-black/20 flex items-end p-2">
@@ -591,7 +677,7 @@ export default function Dashboard() {
                             "relative aspect-video rounded-lg overflow-hidden cursor-pointer border-2 transition-all hover:opacity-90 active:opacity-75 group",
                             wallpaper === wp.url ? "border-blue-500" : "border-transparent",
                           )}
-                          onClick={() => handleWallpaperChange(wp.url)}
+                          onClick={() => handleWallpaperChange({ type: "uploaded", value: wp.id }, wp.url)}
                         >
                           <label
                             className="absolute top-2 left-2 z-10 flex items-center gap-2 rounded bg-black/40 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity"
