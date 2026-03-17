@@ -61,3 +61,9 @@ Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para ma
 Raphael Calixto
 - GitHub: [@RaphaCalixto](https://github.com/RaphaCalixto)
 - Email: raphacalixto10@gmail.com 
+
+## Migracao do Banco (Supabase)
+
+Para usar categorias nas tarefas, execute no SQL Editor do Supabase:
+
+- `supabase/migrations/20260317_add_user_tasks_category.sql`

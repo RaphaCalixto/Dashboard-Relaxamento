@@ -26,12 +26,15 @@ import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabaseClient"
 
 type TaskStatus = "todo" | "inprogress" | "completed"
+type TaskCategory = "work" | "home" | "personal" | "other"
+type CategoryFilter = "all" | TaskCategory | "uncategorized"
 
 type Task = {
   id: string
   title: string
   description: string
   status: TaskStatus
+  category: TaskCategory | null
   createdAt: string
   updatedAt: string
   priority: "low" | "medium" | "high"
@@ -72,18 +75,57 @@ const priorityColors = {
   high: "bg-red-500",
 }
 
+const taskSelectBase = "id, title, description, status, priority, images, created_at, updated_at"
+const taskSelectWithCategory = `${taskSelectBase}, category`
+
+const categoryOptions: Array<{ value: TaskCategory; label: string }> = [
+  { value: "work", label: "Trabalho" },
+  { value: "home", label: "Casa" },
+  { value: "personal", label: "Pessoal" },
+  { value: "other", label: "Outros" },
+]
+
+const categoryLabelMap: Record<TaskCategory, string> = {
+  work: "Trabalho",
+  home: "Casa",
+  personal: "Pessoal",
+  other: "Outros",
+}
+
+const normalizeTaskCategory = (value: unknown): TaskCategory | null => {
+  if (value === "work" || value === "home" || value === "personal" || value === "other") {
+    return value
+  }
+  return null
+}
+
 export function TasksSection({ userId }: TasksSectionProps) {
   const [tasks, setTasks] = useState<Task[]>([])
+  const [supportsTaskCategory, setSupportsTaskCategory] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [taskTitle, setTaskTitle] = useState("")
   const [taskDescription, setTaskDescription] = useState("")
   const [taskPriority, setTaskPriority] = useState<"low" | "medium" | "high">("medium")
+  const [taskCategory, setTaskCategory] = useState<TaskCategory | "">("")
   const [taskImages, setTaskImages] = useState<string[]>([])
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<CategoryFilter>("all")
   const [draggedTask, setDraggedTask] = useState<Task | null>(null)
   const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
+
+  const mapTaskRow = (row: any): Task => ({
+    id: row.id,
+    title: row.title ?? "",
+    description: row.description ?? "",
+    status: row.status,
+    category: normalizeTaskCategory(row.category),
+    priority: row.priority,
+    images: Array.isArray(row.images) ? row.images : [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -91,11 +133,37 @@ export function TasksSection({ userId }: TasksSectionProps) {
     const load = async () => {
       const { data, error } = await supabase
         .from("user_tasks")
-        .select("id, title, description, status, priority, images, created_at, updated_at")
+        .select(taskSelectWithCategory)
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
 
       if (cancelled) return
+
+      const hasMissingCategoryColumn =
+        !!error && typeof error.message === "string" && error.message.toLowerCase().includes("category")
+
+      if (hasMissingCategoryColumn) {
+        const fallback = await supabase
+          .from("user_tasks")
+          .select(taskSelectBase)
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+
+        if (cancelled) return
+
+        if (fallback.error) {
+          toast({
+            title: "Erro ao carregar",
+            description: "NÃ£o foi possÃ­vel carregar suas tarefas.",
+            variant: "destructive",
+          })
+          return
+        }
+
+        setSupportsTaskCategory(false)
+        setTasks((fallback.data ?? []).map((row: any) => mapTaskRow(row)))
+        return
+      }
 
       if (error) {
         toast({
@@ -106,18 +174,8 @@ export function TasksSection({ userId }: TasksSectionProps) {
         return
       }
 
-      setTasks(
-        (data ?? []).map((row: any) => ({
-          id: row.id,
-          title: row.title ?? "",
-          description: row.description ?? "",
-          status: row.status,
-          priority: row.priority,
-          images: Array.isArray(row.images) ? row.images : [],
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-        })),
-      )
+      setSupportsTaskCategory(true)
+      setTasks((data ?? []).map((row: any) => mapTaskRow(row)))
     }
 
     load()
@@ -127,24 +185,46 @@ export function TasksSection({ userId }: TasksSectionProps) {
     }
   }, [userId, toast])
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`tasksCategoryFilter:${userId}`)
+      if (!raw) return
+      if (raw === "all" || raw === "uncategorized" || raw === "work" || raw === "home" || raw === "personal" || raw === "other") {
+        setSelectedCategoryFilter(raw)
+      }
+    } catch {
+      return
+    }
+  }, [userId])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`tasksCategoryFilter:${userId}`, selectedCategoryFilter)
+    } catch {
+      return
+    }
+  }, [userId, selectedCategoryFilter])
+
   const handleAddTask = async () => {
     if (!taskTitle.trim()) return
 
     const now = new Date().toISOString()
+    const taskPayload = {
+      title: taskTitle.trim(),
+      description: taskDescription,
+      priority: taskPriority,
+      images: taskImages,
+      updated_at: now,
+      ...(supportsTaskCategory ? { category: taskCategory || null } : {}),
+    }
 
     if (editingTask) {
       const { data, error } = await supabase
         .from("user_tasks")
-        .update({
-          title: taskTitle.trim(),
-          description: taskDescription,
-          priority: taskPriority,
-          images: taskImages,
-          updated_at: now,
-        })
+        .update(taskPayload)
         .eq("id", editingTask.id)
         .eq("user_id", userId)
-        .select("id, title, description, status, priority, images, created_at, updated_at")
+        .select(supportsTaskCategory ? taskSelectWithCategory : taskSelectBase)
         .single()
 
       if (error || !data) {
@@ -159,16 +239,7 @@ export function TasksSection({ userId }: TasksSectionProps) {
       setTasks(
         tasks.map((t) =>
           t.id === editingTask.id
-            ? {
-                id: data.id,
-                title: data.title ?? "",
-                description: data.description ?? "",
-                status: data.status,
-                priority: data.priority,
-                images: Array.isArray(data.images) ? data.images : [],
-                createdAt: data.created_at,
-                updatedAt: data.updated_at,
-              }
+            ? mapTaskRow(data)
             : t,
         ),
       )
@@ -177,15 +248,11 @@ export function TasksSection({ userId }: TasksSectionProps) {
         .from("user_tasks")
         .insert({
           user_id: userId,
-          title: taskTitle.trim(),
-          description: taskDescription,
           status: "todo",
-          priority: taskPriority,
-          images: taskImages,
           created_at: now,
-          updated_at: now,
+          ...taskPayload,
         })
-        .select("id, title, description, status, priority, images, created_at, updated_at")
+        .select(supportsTaskCategory ? taskSelectWithCategory : taskSelectBase)
         .single()
 
       if (error || !data) {
@@ -197,19 +264,7 @@ export function TasksSection({ userId }: TasksSectionProps) {
         return
       }
 
-      setTasks([
-        {
-          id: data.id,
-          title: data.title ?? "",
-          description: data.description ?? "",
-          status: data.status,
-          priority: data.priority,
-          images: Array.isArray(data.images) ? data.images : [],
-          createdAt: data.created_at,
-          updatedAt: data.updated_at,
-        },
-        ...tasks,
-      ])
+      setTasks([mapTaskRow(data), ...tasks])
     }
 
     resetForm()
@@ -220,6 +275,7 @@ export function TasksSection({ userId }: TasksSectionProps) {
     setTaskTitle(task.title)
     setTaskDescription(task.description)
     setTaskPriority(task.priority)
+    setTaskCategory(task.category ?? "")
     setTaskImages(task.images)
     setIsDialogOpen(true)
   }
@@ -243,6 +299,7 @@ export function TasksSection({ userId }: TasksSectionProps) {
     setTaskTitle("")
     setTaskDescription("")
     setTaskPriority("medium")
+    setTaskCategory("")
     setTaskImages([])
     setEditingTask(null)
     setIsDialogOpen(false)
@@ -308,8 +365,14 @@ export function TasksSection({ userId }: TasksSectionProps) {
     setDraggedTask(null)
   }
 
+  const filteredTasks = tasks.filter((task) => {
+    if (selectedCategoryFilter === "all") return true
+    if (selectedCategoryFilter === "uncategorized") return !task.category
+    return task.category === selectedCategoryFilter
+  })
+
   const getTasksByStatus = (status: TaskStatus) => {
-    return tasks.filter((task) => task.status === status)
+    return filteredTasks.filter((task) => task.status === status)
   }
 
   return (
@@ -373,6 +436,25 @@ export function TasksSection({ userId }: TasksSectionProps) {
                 </select>
               </div>
 
+              {supportsTaskCategory && (
+                <div>
+                  <Label htmlFor="task-category">Categoria (opcional)</Label>
+                  <select
+                    id="task-category"
+                    value={taskCategory}
+                    onChange={(e) => setTaskCategory(e.target.value as TaskCategory | "")}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
+                  >
+                    <option value="">Sem categoria</option>
+                    {categoryOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <Label>Imagens</Label>
                 <div className="space-y-2">
@@ -428,7 +510,37 @@ export function TasksSection({ userId }: TasksSectionProps) {
             </div>
           </DialogContent>
         </Dialog>
+
+        {supportsTaskCategory && (
+          <div className="flex items-center gap-2 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md rounded-md px-3 py-1.5 border border-gray-200 dark:border-gray-700">
+            <Label htmlFor="task-category-filter" className="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">
+              Categoria
+            </Label>
+            <select
+              id="task-category-filter"
+              value={selectedCategoryFilter}
+              onChange={(e) => setSelectedCategoryFilter(e.target.value as CategoryFilter)}
+              className="p-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-sm"
+            >
+              <option value="all">Todas</option>
+              <option value="uncategorized">Sem categoria</option>
+              {categoryOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
+
+      {!supportsTaskCategory && (
+        <Card className="bg-amber-50/90 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700">
+          <CardContent className="py-3 text-sm text-amber-900 dark:text-amber-200">
+            Para habilitar categorias no banco, execute a migracao SQL `supabase/migrations/20260317_add_user_tasks_category.sql`.
+          </CardContent>
+        </Card>
+      )}
 
       {/* Kanban Board */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -501,6 +613,12 @@ export function TasksSection({ userId }: TasksSectionProps) {
 
                         {task.description && (
                           <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{task.description}</p>
+                        )}
+
+                        {task.category && (
+                          <div className="mb-3">
+                            <Badge variant="secondary">{categoryLabelMap[task.category]}</Badge>
+                          </div>
                         )}
 
                         {task.images.length > 0 && (
