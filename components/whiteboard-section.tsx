@@ -248,6 +248,12 @@ const getThemeById = (themeId: string) => WHITEBOARD_THEMES.find((theme) => them
 
 const getThemeColor = (theme: WhiteboardTheme, index: number) => theme.nodePalette[index % theme.nodePalette.length] ?? theme.accent
 
+type EdgeDecorationOptions = {
+  withArrow?: boolean
+  dashed?: boolean
+  strokeWidth?: number
+}
+
 const buildNode = (
   id: string,
   position: { x: number; y: number },
@@ -267,19 +273,27 @@ const buildNode = (
   },
 })
 
-const decorateEdge = (edge: Edge, edgeColor = "#475569"): Edge => ({
-  ...edge,
-  type: edge.type ?? "smoothstep",
-  markerEnd: {
-    type: MarkerType.ArrowClosed,
-    color: edgeColor,
-  },
-  style: {
-    stroke: edgeColor,
-    strokeWidth: 2,
-    ...(edge.style ?? {}),
-  },
-})
+const decorateEdge = (edge: Edge, edgeColor = "#475569", options?: EdgeDecorationOptions): Edge => {
+  const edgeData = (edge.data ?? {}) as { disableArrow?: boolean }
+  const withArrow = options?.withArrow ?? !edgeData.disableArrow
+
+  return {
+    ...edge,
+    type: edge.type ?? "smoothstep",
+    markerEnd: withArrow
+      ? {
+          type: MarkerType.ArrowClosed,
+          color: edgeColor,
+        }
+      : undefined,
+    style: {
+      stroke: edgeColor,
+      strokeWidth: options?.strokeWidth ?? 2,
+      ...(options?.dashed ? { strokeDasharray: "6 6" } : {}),
+      ...(edge.style ?? {}),
+    },
+  }
+}
 
 const deserializeContent = (raw: unknown): WhiteboardContent => {
   if (!raw || typeof raw !== "object") return emptyBoard
@@ -321,6 +335,7 @@ const deserializeContent = (raw: unknown): WhiteboardContent => {
             sourceHandle: typeof edge.sourceHandle === "string" ? edge.sourceHandle : undefined,
             targetHandle: typeof edge.targetHandle === "string" ? edge.targetHandle : undefined,
             type: typeof edge.type === "string" ? edge.type : "smoothstep",
+            data: edge.data ?? undefined,
             style: edge.style ?? undefined,
             markerEnd: edge.markerEnd ?? undefined,
           }),
@@ -363,6 +378,7 @@ const serializeContent = (content: WhiteboardContent) => ({
     sourceHandle: edge.sourceHandle,
     targetHandle: edge.targetHandle,
     type: edge.type ?? "smoothstep",
+    data: edge.data,
     style: edge.style,
     markerEnd: edge.markerEnd,
   })),
@@ -528,6 +544,141 @@ const buildTemplate = (
     })
 
     return { nodes, edges, viewport: { x: -220, y: -180, zoom: 0.72 } }
+  }
+
+  if (templateId === "infographic") {
+    const center = buildNode(crypto.randomUUID(), { x: 560, y: 240 }, "circle", {
+      label: parsed[0] ?? "INFOGRAFICO",
+      fillColor: getThemeColor(theme, 0),
+      textColor: theme.textColor,
+      width: 230,
+      height: 230,
+    })
+
+    const topicLabels =
+      parsed.length >= 5
+        ? parsed.slice(1, 9)
+        : ["Contexto", "Problema", "Analise", "Insights", "Processo", "Resultados", "Acao", "Conclusao"]
+
+    const nodes = [center]
+    const edges: Edge[] = []
+
+    topicLabels.forEach((label, index) => {
+      const angle = -Math.PI / 2 + (Math.PI * 2 * index) / topicLabels.length
+      const item = buildNode(
+        crypto.randomUUID(),
+        {
+          x: 560 + Math.cos(angle) * 400,
+          y: 240 + Math.sin(angle) * 320,
+        },
+        "rounded",
+        {
+          label,
+          fillColor: getThemeColor(theme, index + 1),
+          textColor: theme.textColor,
+          width: 200,
+          height: 90,
+        },
+      )
+      nodes.push(item)
+      edges.push(
+        decorateEdge(
+          {
+            id: crypto.randomUUID(),
+            source: center.id,
+            target: item.id,
+            data: { disableArrow: true },
+          },
+          getThemeColor(theme, index + 1),
+          { withArrow: false, strokeWidth: 3 },
+        ),
+      )
+    })
+
+    return { nodes, edges, viewport: { x: -250, y: -220, zoom: 0.62 } }
+  }
+
+  if (templateId === "hierarchy") {
+    const root = buildNode(crypto.randomUUID(), { x: 560, y: 20 }, "circle", {
+      label: parsed[0] ?? "Diretoria",
+      fillColor: getThemeColor(theme, 0),
+      textColor: theme.textColor,
+      width: 120,
+      height: 120,
+    })
+
+    const middleLabels = parsed.length >= 4 ? parsed.slice(1, 4) : ["Operacoes", "Marketing", "Tecnologia"]
+    const leafLabels =
+      parsed.length >= 10 ? parsed.slice(4, 10) : ["Equipe A", "Equipe B", "Equipe C", "Equipe D", "Equipe E", "Equipe F"]
+
+    const middleNodes = middleLabels.map((label, index) =>
+      buildNode(
+        crypto.randomUUID(),
+        { x: 210 + index * 330, y: 220 },
+        "circle",
+        {
+          label,
+          fillColor: getThemeColor(theme, index + 1),
+          textColor: theme.textColor,
+          width: 112,
+          height: 112,
+        },
+      ),
+    )
+
+    const leafNodes = leafLabels.map((label, index) =>
+      buildNode(
+        crypto.randomUUID(),
+        { x: 120 + index * 180, y: 420 },
+        "circle",
+        {
+          label,
+          fillColor: getThemeColor(theme, index + 4),
+          textColor: theme.textColor,
+          width: 104,
+          height: 104,
+        },
+      ),
+    )
+
+    const nodes = [root, ...middleNodes, ...leafNodes]
+    const edges: Edge[] = []
+
+    middleNodes.forEach((node) => {
+      edges.push(
+        decorateEdge(
+          {
+            id: crypto.randomUUID(),
+            source: root.id,
+            target: node.id,
+            data: { disableArrow: true },
+          },
+          theme.edgeColor,
+          { withArrow: false, dashed: true },
+        ),
+      )
+    })
+
+    leafNodes.forEach((node, index) => {
+      const ownerIndex = Math.min(middleNodes.length - 1, Math.floor((index * middleNodes.length) / leafNodes.length))
+      const owner = middleNodes[ownerIndex]
+      if (!owner) return
+
+      edges.push(
+        decorateEdge(
+          {
+            id: crypto.randomUUID(),
+            source: owner.id,
+            target: node.id,
+            data: { disableArrow: true },
+          },
+          theme.edgeColor,
+          { withArrow: false, dashed: true },
+        ),
+      )
+    })
+
+    return { nodes, edges, viewport: { x: -220, y: -80, zoom: 0.7 } }
   }
 
   if (templateId === "timeline") {
@@ -1235,12 +1386,12 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
                           key={template.id}
                           type="button"
                           variant="outline"
-                          className="h-10 justify-start gap-2 text-xs text-slate-100"
+                          className="h-11 justify-start gap-2 whitespace-normal px-2 text-[11px] leading-tight text-slate-100"
                           style={{ borderColor: activeTheme.panelBorder, backgroundColor: activeTheme.canvasBg }}
                           onClick={() => applyTemplateById(template.id)}
                         >
-                          <Icon className="h-3.5 w-3.5" />
-                          {template.label}
+                          <Icon className="h-3.5 w-3.5 shrink-0" />
+                          <span className="min-w-0 break-words text-left">{template.label}</span>
                         </Button>
                       )
                     })}
