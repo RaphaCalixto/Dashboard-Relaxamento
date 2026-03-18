@@ -751,25 +751,55 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
   const selectedNode = useMemo(() => nodes.find((node) => node.id === selectedNodeId) ?? null, [nodes, selectedNodeId])
   const activeTheme = useMemo(() => getThemeById(themeId), [themeId])
 
+  const fitCanvasToContent = useCallback(
+    (duration = 280) => {
+      if (!reactFlowInstance) return
+
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          const fitResult = reactFlowInstance.fitView({
+            padding: 0.2,
+            duration,
+            includeHiddenNodes: true,
+            minZoom: 0.2,
+            maxZoom: 1.4,
+          })
+
+          void Promise.resolve(fitResult).finally(() => {
+            setViewport(reactFlowInstance.getViewport())
+          })
+        })
+      })
+    },
+    [reactFlowInstance],
+  )
+
   const applyBoardContent = useCallback(
     async (content: WhiteboardContent) => {
       setIsHydratingBoard(true)
       setNodes(content.nodes)
       setEdges(content.edges)
-      setViewport(content.viewport)
       setThemeId(content.themeId)
       setSelectedNodeId(null)
       setSelectedEdgeId(null)
 
       if (reactFlowInstance) {
-        await reactFlowInstance.setViewport(content.viewport, { duration: 0 })
+        if (content.nodes.length > 0) {
+          fitCanvasToContent(0)
+        } else {
+          const emptyViewport = { x: 0, y: 0, zoom: 1 }
+          setViewport(emptyViewport)
+          await reactFlowInstance.setViewport(emptyViewport, { duration: 0 })
+        }
+      } else {
+        setViewport(content.viewport)
       }
 
       requestAnimationFrame(() => {
         setIsHydratingBoard(false)
       })
     },
-    [reactFlowInstance, setEdges, setNodes],
+    [fitCanvasToContent, reactFlowInstance, setEdges, setNodes],
   )
 
   const createBoard = useCallback(
@@ -1139,11 +1169,12 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
     const template = buildTemplate(templateId, activeTheme, promptHint)
     setNodes(template.nodes)
     setEdges(template.edges)
-    setViewport(template.viewport)
     setSelectedNodeId(null)
     setSelectedEdgeId(null)
     if (reactFlowInstance) {
-      void reactFlowInstance.setViewport(template.viewport, { duration: 260 })
+      fitCanvasToContent(260)
+    } else {
+      setViewport(template.viewport)
     }
   }
 
@@ -1173,11 +1204,12 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
       }),
     ])
     setEdges([])
-    setViewport({ x: 0, y: 0, zoom: 1 })
     setSelectedNodeId(null)
     setSelectedEdgeId(null)
     if (reactFlowInstance) {
-      void reactFlowInstance.setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 220 })
+      fitCanvasToContent(220)
+    } else {
+      setViewport({ x: 0, y: 0, zoom: 1 })
     }
   }
 

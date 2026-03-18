@@ -388,6 +388,14 @@ export default function Dashboard() {
                   </div>
                   <div
                     className="text-center p-4 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-lg cursor-pointer hover:bg-white/60 dark:hover:bg-gray-800/60 transition-all"
+                    onClick={() => setActiveSection("whiteboard")}
+                  >
+                    <Workflow className="h-8 w-8 mx-auto mb-2 text-cyan-600 dark:text-cyan-400" />
+                    <h3 className="font-semibold text-cyan-800 dark:text-cyan-300">Quadro</h3>
+                    <p className="text-sm text-cyan-600 dark:text-cyan-400">Crie diagramas e fluxos</p>
+                  </div>
+                  <div
+                    className="text-center p-4 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-lg cursor-pointer hover:bg-white/60 dark:hover:bg-gray-800/60 transition-all"
                     onClick={() => setActiveSection("music")}
                   >
                     <Music className="h-8 w-8 mx-auto mb-2 text-purple-600 dark:text-purple-400" />
