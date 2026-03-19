@@ -68,3 +68,15 @@ Para usar categorias nas tarefas, execute no SQL Editor do Supabase:
 
 - `supabase/migrations/20260317_add_user_tasks_category.sql`
 - `supabase/migrations/20260317_create_user_whiteboards.sql`
+
+## Integracao IA (Mermaid)
+
+Para gerar diagramas com IA no quadro, crie o arquivo `.env.local` na raiz:
+
+```bash
+OPENAI_API_KEY=sua_chave_aqui
+OPENAI_MODEL=gpt-4.1-mini
+```
+
+- `OPENAI_MODEL` e opcional.
+- A rota usada pelo app e `POST /api/diagram-mermaid`.

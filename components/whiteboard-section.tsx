@@ -31,6 +31,7 @@ import {
   FileImage,
   FileText,
   GitBranch,
+  Loader2,
   Network,
   Palette,
   Plus,
@@ -85,6 +86,23 @@ type WhiteboardRow = {
 
 type WhiteboardSectionProps = {
   userId: string
+}
+
+type MermaidGenerationResponse = {
+  mermaid?: string
+  error?: string
+}
+
+type MermaidNodeDraft = {
+  id: string
+  label: string
+  shape: NodeShape
+}
+
+type MermaidEdgeDraft = {
+  sourceId: string
+  targetId: string
+  label?: string
 }
 
 const MIN_NODE_SIZE = 80
@@ -443,6 +461,242 @@ const slugify = (value: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)+/g, "") || "quadro"
 
+const normalizeMermaidLabel = (value: string, fallback: string) => {
+  const cleaned = value.trim().replace(/^["'`]+|["'`]+$/g, "").replace(/\s+/g, " ")
+  return cleaned || fallback
+}
+
+const parseMermaidNodeToken = (token: string): MermaidNodeDraft | null => {
+  const normalized = token.trim()
+  if (!normalized) return null
+
+  const idMatch = normalized.match(/^([A-Za-z][A-Za-z0-9_]*)/)
+  if (!idMatch) return null
+
+  const id = idMatch[1]
+  const remainder = normalized.slice(id.length).trim()
+  if (!remainder) {
+    return {
+      id,
+      label: id,
+      shape: "rounded",
+    }
+  }
+
+  const patterns: Array<{ open: string; close: string; shape: NodeShape }> = [
+    { open: "((", close: "))", shape: "circle" },
+    { open: "{", close: "}", shape: "diamond" },
+    { open: "[", close: "]", shape: "rectangle" },
+    { open: "(", close: ")", shape: "rounded" },
+  ]
+
+  for (const pattern of patterns) {
+    if (!remainder.startsWith(pattern.open) || !remainder.endsWith(pattern.close)) continue
+
+    const label = remainder.slice(pattern.open.length, remainder.length - pattern.close.length)
+    return {
+      id,
+      label: normalizeMermaidLabel(label, id),
+      shape: pattern.shape,
+    }
+  }
+
+  return {
+    id,
+    label: normalizeMermaidLabel(remainder, id),
+    shape: "rounded",
+  }
+}
+
+const mergeMermaidNodeDraft = (current: MermaidNodeDraft | undefined, incoming: MermaidNodeDraft) => {
+  if (!current) return incoming
+  const nextLabel = current.label === current.id ? incoming.label : current.label
+  const nextShape = current.shape === "rounded" ? incoming.shape : current.shape
+  return {
+    ...current,
+    label: nextLabel,
+    shape: nextShape,
+  }
+}
+
+const parseMermaidToWhiteboard = (
+  mermaid: string,
+  theme: WhiteboardTheme,
+): { nodes: Node<WhiteboardNodeData>[]; edges: Edge[]; viewport: WhiteboardContent["viewport"] } | null => {
+  const statements = mermaid
+    .split(/\r?\n/)
+    .flatMap((line) => line.split(";"))
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  const nodeMap = new Map<string, MermaidNodeDraft>()
+  const edgeDrafts: MermaidEdgeDraft[] = []
+
+  statements.forEach((statement) => {
+    if (/^(flowchart|graph)\b/i.test(statement)) return
+    if (/^(%%|classDef|class|style|linkStyle|subgraph|end)\b/i.test(statement)) return
+
+    const edgeMatch = statement.match(/^(.+?)\s*-->\s*(?:\|([^|]+)\|\s*)?(.+)$/)
+    if (edgeMatch) {
+      const sourceToken = parseMermaidNodeToken(edgeMatch[1])
+      const targetToken = parseMermaidNodeToken(edgeMatch[3])
+
+      if (!sourceToken || !targetToken) return
+
+      nodeMap.set(sourceToken.id, mergeMermaidNodeDraft(nodeMap.get(sourceToken.id), sourceToken))
+      nodeMap.set(targetToken.id, mergeMermaidNodeDraft(nodeMap.get(targetToken.id), targetToken))
+
+      edgeDrafts.push({
+        sourceId: sourceToken.id,
+        targetId: targetToken.id,
+        label: edgeMatch[2] ? normalizeMermaidLabel(edgeMatch[2], "") : undefined,
+      })
+      return
+    }
+
+    const isolated = parseMermaidNodeToken(statement)
+    if (!isolated) return
+
+    nodeMap.set(isolated.id, mergeMermaidNodeDraft(nodeMap.get(isolated.id), isolated))
+  })
+
+  if (nodeMap.size === 0) return null
+
+  const ids = Array.from(nodeMap.keys())
+  const adjacency = new Map<string, string[]>()
+  const indegree = new Map<string, number>()
+  const uniqueEdges = new Map<string, MermaidEdgeDraft>()
+
+  ids.forEach((id) => {
+    adjacency.set(id, [])
+    indegree.set(id, 0)
+  })
+
+  edgeDrafts.forEach((edge) => {
+    if (!nodeMap.has(edge.sourceId) || !nodeMap.has(edge.targetId)) return
+    const edgeKey = `${edge.sourceId}::${edge.targetId}::${edge.label ?? ""}`
+    if (uniqueEdges.has(edgeKey)) return
+    uniqueEdges.set(edgeKey, edge)
+
+    adjacency.set(edge.sourceId, [...(adjacency.get(edge.sourceId) ?? []), edge.targetId])
+    indegree.set(edge.targetId, (indegree.get(edge.targetId) ?? 0) + 1)
+  })
+
+  const levelByNode = new Map<string, number>(ids.map((id) => [id, 0]))
+  const indegreeQueue = new Map(indegree)
+  const queue = ids.filter((id) => (indegreeQueue.get(id) ?? 0) === 0)
+  const processed = new Set<string>()
+
+  while (queue.length > 0) {
+    const current = queue.shift()
+    if (!current) continue
+    processed.add(current)
+
+    const currentLevel = levelByNode.get(current) ?? 0
+    const targets = adjacency.get(current) ?? []
+
+    targets.forEach((target) => {
+      const nextLevel = Math.max(levelByNode.get(target) ?? 0, currentLevel + 1)
+      levelByNode.set(target, nextLevel)
+
+      const nextIndegree = (indegreeQueue.get(target) ?? 0) - 1
+      indegreeQueue.set(target, nextIndegree)
+      if (nextIndegree === 0) {
+        queue.push(target)
+      }
+    })
+  }
+
+  if (processed.size < ids.length) {
+    let fallbackLevel = Math.max(0, ...Array.from(levelByNode.values())) + 1
+    ids.forEach((id) => {
+      if (processed.has(id)) return
+      levelByNode.set(id, fallbackLevel)
+      fallbackLevel += 1
+    })
+  }
+
+  const levels = new Map<number, string[]>()
+  ids.forEach((id) => {
+    const level = levelByNode.get(id) ?? 0
+    const entries = levels.get(level) ?? []
+    entries.push(id)
+    levels.set(level, entries)
+  })
+
+  levels.forEach((group, level) => {
+    group.sort((a, b) => {
+      const first = nodeMap.get(a)?.label ?? a
+      const second = nodeMap.get(b)?.label ?? b
+      return first.localeCompare(second, "pt-BR")
+    })
+    levels.set(level, group)
+  })
+
+  const sortedLevels = Array.from(levels.keys()).sort((a, b) => a - b)
+  const maxRows = Math.max(1, ...Array.from(levels.values()).map((group) => group.length))
+  const xSpacing = 300
+  const ySpacing = 170
+
+  const nodes: Node<WhiteboardNodeData>[] = []
+  let colorIndex = 0
+
+  sortedLevels.forEach((level) => {
+    const group = levels.get(level) ?? []
+    const yOffset = 120 + ((maxRows - group.length) * ySpacing) / 2
+
+    group.forEach((nodeId, rowIndex) => {
+      const draft = nodeMap.get(nodeId)
+      if (!draft) return
+
+      const baseWidth = draft.shape === "circle" ? 144 : draft.shape === "diamond" ? 210 : 220
+      const baseHeight = draft.shape === "circle" ? 144 : draft.shape === "diamond" ? 120 : 92
+      const textScale = draft.shape === "circle" ? 14 : 28
+      const extraLines = Math.max(0, Math.ceil(draft.label.length / textScale) - 1)
+      const width = sanitizeNumber(baseWidth + Math.min(100, extraLines * 16), baseWidth, MIN_NODE_SIZE, MAX_NODE_SIZE)
+      const height = sanitizeNumber(baseHeight + extraLines * 18, baseHeight, MIN_NODE_SIZE, MAX_NODE_SIZE)
+
+      nodes.push(
+        buildNode(
+          nodeId,
+          {
+            x: 120 + level * xSpacing,
+            y: yOffset + rowIndex * ySpacing,
+          },
+          draft.shape,
+          {
+            label: draft.label,
+            fillColor: getThemeColor(theme, colorIndex),
+            textColor: theme.textColor,
+            width,
+            height,
+          },
+        ),
+      )
+      colorIndex += 1
+    })
+  })
+
+  const edges = Array.from(uniqueEdges.values()).map((edge) =>
+    decorateEdge(
+      {
+        id: crypto.randomUUID(),
+        source: edge.sourceId,
+        target: edge.targetId,
+        label: edge.label,
+        type: "smoothstep",
+      },
+      theme.edgeColor,
+    ),
+  )
+
+  return {
+    nodes,
+    edges,
+    viewport: { x: 0, y: 0, zoom: 1 },
+  }
+}
+
 const buildLinearTemplate = (
   labels: string[],
   shapes: NodeShape[],
@@ -736,6 +990,8 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 })
   const [themeId, setThemeId] = useState(DEFAULT_THEME_ID)
   const [diagramPrompt, setDiagramPrompt] = useState("")
+  const [generatedMermaid, setGeneratedMermaid] = useState("")
+  const [isGeneratingDiagram, setIsGeneratingDiagram] = useState(false)
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance<Node<WhiteboardNodeData>, Edge> | null>(null)
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
@@ -1169,6 +1425,7 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
     const template = buildTemplate(templateId, activeTheme, promptHint)
     setNodes(template.nodes)
     setEdges(template.edges)
+    setGeneratedMermaid("")
     setSelectedNodeId(null)
     setSelectedEdgeId(null)
     if (reactFlowInstance) {
@@ -1178,7 +1435,7 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
     }
   }
 
-  const handleGenerateDiagram = () => {
+  const handleGenerateDiagram = async () => {
     const prompt = diagramPrompt.trim()
     if (!prompt) {
       toast({
@@ -1188,11 +1445,66 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
       return
     }
 
-    applyTemplateById("flowchart", prompt)
-    toast({
-      title: "Diagrama gerado",
-      description: "Template aplicado com base na sua descricao.",
-    })
+    setIsGeneratingDiagram(true)
+
+    try {
+      const response = await fetch("/api/diagram-mermaid", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ prompt }),
+      })
+
+      const payload = (await response.json()) as MermaidGenerationResponse
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Nao foi possivel gerar o diagrama com IA.")
+      }
+
+      const mermaid = typeof payload.mermaid === "string" ? payload.mermaid.trim() : ""
+      if (!mermaid) {
+        throw new Error("A IA nao retornou um Mermaid valido.")
+      }
+
+      setGeneratedMermaid(mermaid)
+
+      const generatedDiagram = parseMermaidToWhiteboard(mermaid, activeTheme)
+      if (!generatedDiagram) {
+        applyTemplateById("flowchart", prompt)
+        setGeneratedMermaid(mermaid)
+        toast({
+          title: "Mermaid recebido com ajustes",
+          description: "A IA respondeu, mas usamos um template padrao para manter o fluxo pronto.",
+        })
+        return
+      }
+
+      setNodes(generatedDiagram.nodes)
+      setEdges(generatedDiagram.edges)
+      setSelectedNodeId(null)
+      setSelectedEdgeId(null)
+
+      if (reactFlowInstance) {
+        fitCanvasToContent(320)
+      } else {
+        setViewport(generatedDiagram.viewport)
+      }
+
+      toast({
+        title: "Diagrama gerado com IA",
+        description: "Estrutura Mermaid criada automaticamente a partir da sua descricao.",
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao gerar o diagrama com IA."
+      toast({
+        title: "Erro ao gerar diagrama",
+        description: message,
+        variant: "destructive",
+      })
+    } finally {
+      setIsGeneratingDiagram(false)
+    }
   }
 
   const resetCurrentBoard = () => {
@@ -1204,6 +1516,7 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
       }),
     ])
     setEdges([])
+    setGeneratedMermaid("")
     setSelectedNodeId(null)
     setSelectedEdgeId(null)
     if (reactFlowInstance) {
@@ -1397,11 +1710,25 @@ export function WhiteboardSection({ userId }: WhiteboardSectionProps) {
                   type="button"
                   className="w-full"
                   style={{ backgroundColor: activeTheme.accent, color: activeTheme.textColor }}
-                  onClick={handleGenerateDiagram}
+                  onClick={() => void handleGenerateDiagram()}
+                  disabled={isGeneratingDiagram}
                 >
-                  <Wand2 className="h-4 w-4 mr-2" />
-                  Gerar Diagrama
+                  {isGeneratingDiagram ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wand2 className="h-4 w-4 mr-2" />}
+                  {isGeneratingDiagram ? "Gerando com IA..." : "Gerar Diagrama"}
                 </Button>
+
+                {generatedMermaid ? (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-300">Mermaid gerado pela IA</h4>
+                    <Textarea
+                      readOnly
+                      value={generatedMermaid}
+                      rows={7}
+                      className="resize-none text-slate-100 text-xs leading-relaxed"
+                      style={{ borderColor: activeTheme.panelBorder, backgroundColor: activeTheme.canvasBg }}
+                    />
+                  </div>
+                ) : null}
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
